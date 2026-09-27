@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Smart-Hanger Operator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
+<style>
+  :root {
+    --bg:#14171a; --panel:#1c2024; --panel2:#23282d; --line:#2c3238;
+    --dim:#39414a; --label:#8a939c; --text:#e8ecef; --muted:#aab2bb;
+    --cyan:#00E5D1; --cyan-mute:#2a9d96; --cyan-deep:#0a3d3a;
+    --amber:#FFB020; --amber-deep:#3d2e0a;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace; }
+  #root { min-height:100%; }
+  .wrap { max-width:1040px; margin:0 auto; padding:20px clamp(14px,3vw,32px) 40px; }
+  /* full-bleed shell for the framed screens (preview/production/hangerDone) */
+  .shell { max-width:1640px; margin:0 auto; padding:12px clamp(12px,2vw,28px) 24px; }
+  .titlebar { display:flex; align-items:center; justify-content:space-between; gap:14px;
+    border-bottom:1px solid var(--line); padding:4px 2px 12px; margin-bottom:14px; }
+  .tb-file { font-size:11px; letter-spacing:0.1em; color:var(--label);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:48vw; }
+  .tb-file b { color:var(--muted); font-weight:600; }
+  .tb-hid { font-size:20px; font-weight:700; line-height:1.15; }
+  .tb-hid small { font-size:11px; font-weight:400; letter-spacing:0.12em; color:var(--label); margin-left:10px; }
+  .tb-right { display:flex; align-items:center; gap:14px; flex:0 0 auto; }
+  .tb-prog { font-size:14px; letter-spacing:0.1em; color:var(--cyan); font-variant-numeric:tabular-nums; }
+  /* File ▾ menu */
+  .filemenu { position:relative; }
+  .fmbtn { font-size:12px; letter-spacing:0.12em; padding:7px 12px; background:transparent;
+    border:1px solid var(--line); color:var(--muted); display:inline-flex; align-items:center; gap:8px; }
+  .fmbtn:hover { border-color:var(--cyan-mute); color:var(--text); }
+  .fmback { position:fixed; inset:0; z-index:15; }
+  .fmpanel { position:absolute; right:0; top:calc(100% + 6px); z-index:20; min-width:248px;
+    background:var(--panel2); border:1px solid var(--line); padding:6px; display:flex; flex-direction:column; gap:4px; }
+  .fmwarn { font-size:11px; letter-spacing:0.04em; color:var(--amber); background:var(--amber-deep);
+    border:1px solid var(--amber); padding:8px 10px; margin-bottom:2px; }
+  .fmitem { font-family:inherit; text-align:left; font-size:13px; letter-spacing:0.03em; padding:11px 12px;
+    background:transparent; border:1px solid transparent; color:var(--text); display:flex; align-items:center; gap:8px; }
+  .fmitem:hover { background:var(--panel); border-color:var(--line); }
+  .fmitem .sub { color:var(--label); font-size:11px; }
+  .fmitem.armed { border-color:var(--amber); color:var(--amber); }
+  /* frame: persistent title bar + left rail + body */
+  .framerow { display:flex; gap:clamp(10px,1.4vw,18px); align-items:stretch; min-height:0; }
+  .rail { flex:0 0 clamp(104px,12vw,148px); display:flex; flex-direction:column; gap:6px; overflow-y:auto; padding-right:2px; max-height:clamp(360px,80vh,940px); }
+  .raillabel { font-size:10px; letter-spacing:0.16em; color:var(--label); margin-bottom:2px; }
+  .body { flex:1; min-width:0; display:flex; flex-direction:column; }
+  /* production: center work column + right control column */
+  .prod { display:flex; gap:clamp(10px,1.4vw,18px); flex:1; min-height:0; }
+  .workcol { flex:1; min-width:0; display:flex; flex-direction:column; gap:12px; }
+  .ctrl { flex:0 0 clamp(150px,17vw,212px); display:flex; flex-direction:column; gap:10px; }
+  .ctrl-gap { flex:0 0 18px; }
+  .minimap { flex:0 0 auto; display:flex; justify-content:center; align-items:center; height:clamp(170px,29vh,320px); overflow:hidden; }
+  .minimap svg { height:100%; width:auto; max-width:100%; }
+  .row { display:flex; align-items:center; }
+  .between { justify-content:space-between; }
+  .label { font-size:11px; letter-spacing:0.18em; color:var(--label); }
+  .tag { font-size:11px; letter-spacing:0.18em; padding:5px 10px; border:1px solid var(--line); color:var(--label); }
+  .tag.live { color:var(--cyan); border-color:var(--cyan); }
+  .panel { background:var(--panel); border:1px solid var(--line); }
+  button { font-family:inherit; cursor:pointer; border:none; }
+  button:disabled { cursor:not-allowed; }
+
+  /* header */
+  .head { border-bottom:1px solid var(--line); padding-bottom:12px; margin-bottom:16px; }
+  .hid { font-size:20px; font-weight:700; }
+
+  /* queue rail chips (vertical) */
+  .chip { width:100%; padding:9px 10px; border:1px solid var(--line); background:var(--panel);
+    font-size:13px; letter-spacing:0.03em; color:var(--muted); text-align:left;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .chip .dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:8px; vertical-align:middle; background:var(--dim); }
+  .chip.s-complete .dot { background:var(--cyan); }
+  .chip.s-partial  .dot { background:var(--amber); }
+  .chip.s-inprogress .dot { background:var(--muted); }
+  .chip.current { border-color:var(--cyan); color:var(--text); background:var(--cyan-deep); }
+
+  /* big task card — FIXED height so it never grows with the queue; minimap band takes the rest */
+  .card { background:var(--panel); border:2px solid var(--cyan); padding:clamp(20px,4vw,40px) 20px;
+    text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+    flex:0 0 auto; height:clamp(300px,46vh,560px); overflow:hidden; }
+  .card.skipcut { border-color:var(--amber); }
+  .badgeslot { min-height:30px; display:flex; align-items:center; }
+  .picto { width:clamp(110px,22vw,180px); height:clamp(110px,22vw,180px); flex:0 0 auto; }
+  .tasklabel { font-size:clamp(13px,2.4vw,16px); letter-spacing:0.28em; color:var(--cyan); font-weight:700; }
+  .tasklabel.amber { color:var(--amber); }
+  .bignum { font-size:clamp(72px,18vw,150px); line-height:0.95; font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:-0.02em; }
+  .bignum.idtext { font-size:clamp(52px,13vw,120px); font-variant-numeric:normal; letter-spacing:0.01em; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .unit { font-size:clamp(16px,3vw,22px); color:var(--muted); letter-spacing:0.1em; }
+  .detail { font-size:clamp(12px,2vw,15px); color:var(--label); max-width:34ch; margin-top:4px;
+    min-height:2.6em; display:flex; align-items:center; text-align:center; }
+  .badge { font-size:11px; letter-spacing:0.18em; padding:5px 10px; border:1px solid var(--amber); color:var(--amber); }
+
+  /* progress */
+  .pbar { height:4px; background:var(--line); }
+  .pbar > div { height:100%; background:var(--cyan); transition:width .2s; }
+
+  /* controls — vertical right column */
+  .btn-back { padding:18px 0; background:transparent; border:1px solid var(--line); color:var(--muted);
+    display:flex; align-items:center; justify-content:center; }
+  .btn-back:disabled { color:var(--dim); }
+  .btn-next { flex:1; min-height:120px; padding:24px 16px; background:var(--cyan); color:var(--bg);
+    font-size:clamp(18px,2vw,26px); font-weight:800; letter-spacing:0.2em;
+    display:flex; align-items:center; justify-content:center; gap:12px; }
+  .btn-skip { padding:15px 8px; background:transparent; border:1px solid var(--amber); color:var(--amber);
+    font-size:13px; font-weight:700; letter-spacing:0.1em; display:flex; align-items:center; justify-content:center; gap:8px; text-align:center; }
+  .btn-skip:disabled { border-color:var(--dim); color:var(--dim); }
+
+  /* narrow window — degrade the frame to a stacked layout */
+  @media (max-width:880px) {
+    .framerow { flex-direction:column; min-height:0; gap:14px; }
+    .rail { flex-direction:row; overflow-x:auto; overflow-y:hidden; }
+    .raillabel { display:none; }
+    .chip { width:auto; min-width:72px; text-align:center; }
+    .prod { flex-direction:column; }
+    .ctrl { flex-direction:row; flex-wrap:wrap; }
+    .btn-next { flex:1 1 100%; min-height:0; order:-1; }
+    .btn-back { flex:1 1 30%; }
+    .ctrl-gap { display:none; }
+    .btn-skip { flex:1 1 40%; }
+    .card { min-height:340px; }
+  }
+
+  .btn-primary { width:100%; padding:24px; background:var(--cyan); color:var(--bg); font-size:18px;
+    font-weight:800; letter-spacing:0.18em; display:flex; align-items:center; justify-content:center; gap:12px; }
+  .btn-ghost { padding:16px 28px; background:transparent; border:1px solid var(--cyan); color:var(--cyan);
+    font-size:13px; font-weight:700; letter-spacing:0.16em; display:inline-flex; align-items:center; gap:10px; }
+
+  /* summary tables */
+  .spec { display:grid; grid-template-columns:1fr auto; gap:8px 16px; font-size:14px; padding:4px 2px; }
+  .spec .k { color:var(--label); letter-spacing:0.08em; }
+  .spec .v { text-align:right; }
+  .reorder { width:100%; border-collapse:collapse; font-size:14px; }
+  .reorder th,.reorder td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--line); }
+  .reorder th { color:var(--label); font-weight:600; letter-spacing:0.1em; font-size:12px; }
+  .reorder td.num { text-align:right; font-variant-numeric:tabular-nums; }
+  .h2 { font-size:12px; letter-spacing:0.2em; color:var(--label); margin:22px 0 8px; }
+  .empty { color:var(--label); font-size:14px; padding:14px 2px; }
+  .err { color:var(--amber); border:1px solid var(--amber); background:var(--amber-deep); padding:12px; font-size:13px; }
+  .center { text-align:center; }
+  .stat { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin:6px 0 4px; }
+  .stat .b { padding:8px 14px; border:1px solid var(--line); font-size:13px; letter-spacing:0.06em; }
+  .stat .b b { font-variant-numeric:tabular-nums; }
+
+  /* planning inputs */
+  .ilabel { font-size:10px; letter-spacing:0.16em; color:var(--label); margin-bottom:5px; }
+  .inp { width:100%; padding:14px 12px; background:var(--bg); border:1px solid var(--line); color:var(--text);
+    font-family:inherit; font-size:18px; font-variant-numeric:tabular-nums; }
+  .inp:focus { outline:none; border-color:var(--cyan); }
+  .rowdel { align-self:flex-end; width:48px; height:48px; background:transparent; border:1px solid var(--line);
+    color:var(--label); font-size:20px; }
+  .binrow { display:flex; align-items:center; gap:10px; padding:9px 4px; border-bottom:1px solid var(--line); font-size:14px; }
+  .binrow:last-child { border-bottom:none; }
+  .bintag { flex:0 0 auto; font-size:11px; letter-spacing:0.08em; padding:3px 8px; border:1px solid var(--dim); color:var(--label); }
+  .bintag.waste { border-color:var(--amber); color:var(--amber); }
+  .bintag.stock { border-color:var(--cyan-mute); color:var(--cyan); }
+  .binpieces { flex:1; font-variant-numeric:tabular-nums; color:var(--text); }
+  .binrem { flex:0 0 auto; color:var(--label); font-variant-numeric:tabular-nums; }
+  .csvchoice { display:flex; width:100%; align-items:center; justify-content:space-between; gap:10px;
+    padding:18px 16px; margin:6px 0; background:var(--bg); border:1px solid var(--line); color:var(--text);
+    font-family:inherit; font-size:15px; letter-spacing:0.04em; }
+  .csvchoice:hover { border-color:var(--cyan); }
+  .okbar { background:var(--cyan-deep); border:1px solid var(--cyan-mute); color:var(--cyan);
+    padding:10px 12px; font-size:13px; letter-spacing:0.06em; margin-bottom:14px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo, useRef, useEffect } = React;
+
+const STORE_KEY = "smh-operator-v1";
+
+// ============================================================
+// CORE — shared with the BOM app (keep in sync; BOM app not yet patched)
+//   parseCSV: locate header by name, map columns by name (robust
+//   to reordering). Each clamp slot:
+//     D = clamp diameter         X = position on bar
+//     ThreadLength = rod CUT length (family-computed) -> rodLength
+//     Y = pipe centerline — NOT used here (printed on stickers only)
+//   Requires SH_n_ThreadLength: old exports without it are refused.
+//   cleanHanger: purge filler (D===1), sort survivors by position
+// ============================================================
+const MAX_SLOTS = 10;
+
+function parseCSV(text) {
+  if (!text || !text.trim()) return { hangers: [], error: null, empty: true };
+  const bom = text.charCodeAt(0) === 0xFEFF;
+  const eol = text.indexOf("\r\n") !== -1 ? "\r\n" : "\n";
+  const clean = bom ? text.slice(1) : text;
+  const rawLines = clean.split(/\r?\n/).filter((l) => l.length > 0); // verbatim rows (no CR)
+  const rows = rawLines.map((l) => l.split(","));
+  const headerIdx = rows.findIndex((r) => r.includes("IronLength"));
+  if (headerIdx === -1) return { hangers: [], error: "No header row found (missing 'IronLength' column)." };
+
+  const header = rows[headerIdx].map((h) => h.trim());
+  const col = (name) => header.indexOf(name);
+  const cType = col("Family and Type"), cBar = col("IronLength"), cMark = col("Mark"), cComments = col("Comments");
+  if (col("SH_1_ThreadLength") === -1) {
+    return { hangers: [], error: "Old export — no rod ThreadLength columns (SH_n_ThreadLength). Re-export from Revit before loading." };
+  }
+
+  const hangers = [];
+  const rawRows = []; // verbatim source row text, aligned 1:1 with hangers
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const r = rows[i];
+    const type = (r[cType] || "").trim();
+    if (!type) continue;
+    const slots = [];
+    for (let n = 1; n <= MAX_SLOTS; n++) {
+      const d = parseFloat(r[col(`SH_${n}_D`)]);
+      const x = parseFloat(r[col(`SH_${n}_X`)]);
+      const tl = parseFloat(r[col(`SH_${n}_ThreadLength`)]);
+      if (Number.isNaN(d)) continue;               // blank/absent slot — no clamp
+      slots.push({ slot: n, diameter: d, position: x, rodLength: tl });
+    }
+    // NOTE (Mark vs Comments): In the cc41 export the HA-1..HA-18 labels live in
+    // the "Comments" column and "Mark" is EMPTY. We read Mark first, then fall back
+    // to Comments, then row N. The BOM app keys on Mark only, so it shows blank IDs
+    // on this file — patch it the same way if/when we revisit it.
+    const id = ((r[cMark] || "").trim()) || ((r[cComments] || "").trim()) || `row ${i - headerIdx}`;
+    hangers.push({ id, type, barLength: parseFloat(r[cBar]) || 0, slots });
+    rawRows.push(rawLines[i]);
+  }
+  const raw = {
+    bom, eol,
+    title: rawLines.slice(0, headerIdx),
+    header: rawLines[headerIdx],
+    ncol: rows[headerIdx].length,
+    ironIdx: col("IronLength"),
+    rows: rawRows,
+  };
+  return { hangers, error: null, raw };
+}
+
+function cleanHanger(h) {
+  const clamps = h.slots.filter((s) => s.diameter !== 1).sort((a, b) => a.position - b.position);
+  return { ...h, clamps };
+}
+
+// ============================================================
+// TASK GENERATION — new sequence (no feeds):
+//   1. CUT base bar (mandatory)
+//   2. MARK each clamp position, absolute from left end (left->right)
+//   3. per clamp left->right: INSERT_ROD -> ATTACH_CLAMP
+// ============================================================
+function generateTasks(h) {
+  const tasks = [];
+
+  // LOAD BAR — only when this hanger is the first piece cut from a new bar (set by the planner)
+  if (h.barLoad) {
+    const t = h.barLoad.type === "waste" ? "WASTE" : "STOCK";
+    tasks.push({ type:"LOAD_BAR", label:"LOAD BAR", value:h.barLoad.length, unit:"mm",
+      detail:`Put this ${t} bar on the saw`, barType:h.barLoad.type, clampIndex:-1, stage:"load", skippable:false });
+  }
+
+  tasks.push({ type:"CUT_BAR", label:"CUT BAR", value:h.barLength, unit:"mm",
+    detail:"Cut base bar to length", clampIndex:-1, stage:"cut", skippable:false });
+
+  tasks.push({ type:"LABEL_HANGER", label:"LABEL HANGER", value:h.id, unit:"",
+    detail:"Stick ID label on the base bar", clampIndex:-1, stage:"label", skippable:false });
+
+  h.clamps.forEach((c, i) => {
+    tasks.push({ type:"MARK", label:"MARK", value:c.position, unit:"mm",
+      detail:`Mark ${i+1} of ${h.clamps.length}\u00A0\u2014 distance from left end`, clampIndex:i, stage:"mark", skippable:false });
+  });
+
+  h.clamps.forEach((c, i) => {
+    tasks.push({ type:"INSERT_ROD", label:"INSERT ROD", value:c.rodLength, unit:"mm",
+      detail:`Cut rod, screw into base nut at mark\u00A0${i+1}`, clampIndex:i, stage:"rod", skippable:true, component:"rod" });
+    tasks.push({ type:"ATTACH_CLAMP", label:"ATTACH CLAMP", value:c.diameter, unit:"mm \u00D8",
+      detail:`Fit clamp onto rod at mark\u00A0${i+1}`, clampIndex:i, stage:"clamp", skippable:true, component:"clamp" });
+  });
+  return tasks;
+}
+
+// ============================================================
+// BAR PACKING — greedy, mirrors the other app:
+//   work longest-first; open a bar (waste bars FIRST, in entry
+//   order, then stock bars), fill it with the longest remaining
+//   piece that fits until nothing fits, then open the next bar.
+//   Returns the cut plan + the implied production order.
+// ============================================================
+function packBars(hangers, wasteBars, stockLen) {
+  const remaining = hangers.map((h, i) => ({ i, len: h.barLength })).sort((a, b) => b.len - a.len);
+  const wasteQueue = [];
+  wasteBars.forEach(w => { for (let k = 0; k < (w.qty || 0); k++) if (w.length > 0) wasteQueue.push(w.length); });
+  // longest waste bars first so big pieces have somewhere to go
+  wasteQueue.sort((a, b) => b - a);
+
+  const bins = [];
+  const unplaceable = [];
+  let stockCount = 0;
+
+  while (remaining.length) {
+    let cap, type;
+    if (wasteQueue.length) { cap = wasteQueue.shift(); type = "waste"; }
+    else { cap = stockLen; type = "stock"; }
+    const bin = { type, cap, rem: cap, pieces: [] };
+
+    let placed = true;
+    while (placed) {
+      placed = false;
+      for (let k = 0; k < remaining.length; k++) {
+        if (remaining[k].len <= bin.rem) {
+          bin.rem -= remaining[k].len;
+          bin.pieces.push(remaining[k]);
+          remaining.splice(k, 1);
+          placed = true;
+          break; // restart scan so we always try the longest-fitting next
+        }
+      }
+    }
+
+    if (bin.pieces.length === 0) {
+      if (type === "stock") {
+        // smallest remaining piece is longer than a fresh stock bar — give up gracefully
+        remaining.forEach(p => unplaceable.push(p));
+        break;
+      }
+      bin.unused = true; // waste bar too short for anything left — skip it
+    } else {
+      if (type === "stock") stockCount++;
+    }
+    bins.push(bin);
+  }
+
+  const usedBins = bins.filter(b => !b.unused);
+  const order = [];
+  const loadAt = {}; // hanger index -> {type,length} when it is the first piece on a new bar
+  usedBins.forEach(b => b.pieces.forEach((p, k) => {
+    order.push(p.i);
+    loadAt[p.i] = k === 0 ? { type: b.type, length: b.cap } : null;
+  }));
+  unplaceable.forEach(p => { order.push(p.i); loadAt[p.i] = null; });
+
+  return {
+    order,
+    loadAt,
+    stockCount,
+    wasteUsed: usedBins.filter(b => b.type === "waste").length,
+    bins: usedBins,
+    unplaceable: unplaceable.map(p => ({ id: hangers[p.i].id, len: p.len })),
+    unplaceableIdx: unplaceable.map(p => p.i),
+  };
+}
+
+// Write-only filter: blank D/X/Y/ThreadLength on any slot whose D===1,
+// so stickers printed from the export aren't littered with filler values.
+// Read path + Revit are untouched; blank or "1" both purge on re-import.
+function blankFiller(rowText, colIdx) {
+  const cells = rowText.split(",");
+  for (let n = 1; n <= MAX_SLOTS; n++) {
+    const di = colIdx[`SH_${n}_D`];
+    if (di == null || parseFloat(cells[di]) !== 1) continue;
+    [`SH_${n}_D`, `SH_${n}_X`, `SH_${n}_Y`, `SH_${n}_ThreadLength`].forEach(name => {
+      const ci = colIdx[name];
+      if (ci != null && ci >= 0 && ci < cells.length) cells[ci] = "";
+    });
+  }
+  return cells.join(",");
+}
+
+// Build the export CSV: title + header preserved, original rows reordered
+// bar-by-bar (filler slots blanked), a leftover row (length in IronLength, rest blank) after each bar.
+function buildExportCSV(plan, raw) {
+  const colIdx = {};
+  raw.header.split(",").forEach((name, i) => { colIdx[name.trim()] = i; });
+  const filt = (i) => blankFiller(raw.rows[i], colIdx);
+
+  const lines = [...raw.title, raw.header];
+  plan.bins.forEach(b => {
+    b.pieces.forEach(p => lines.push(filt(p.i)));
+    if (b.rem > 0) {
+      const row = new Array(raw.ncol).fill("");
+      row[raw.ironIdx] = String(b.rem);
+      if (colIdx["Comments"] != null) row[colIdx["Comments"]] = "Waste";
+      lines.push(row.join(","));
+    }
+  });
+  // pieces too long for any stock bar — keep their original rows at the end
+  (plan.unplaceableIdx || []).forEach(i => lines.push(filt(i)));
+  return (raw.bom ? "\uFEFF" : "") + lines.join(raw.eol) + raw.eol;
+}
+
+function exportName(fileName) {
+  const base = (fileName || "hangers").replace(/\.csv$/i, "");
+  return `${base} - production.csv`;
+}
+
+// Timestamped copy name for the printer/Documents folder. Local time;
+// ":" is illegal in filenames, so HH-MM. e.g. Smart_Hangers_2026-06-06_15-27.csv
+function timestampName(d = new Date()) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `Smart_Hangers_${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}.csv`;
+}
+async function writeToDir(dir, name, text) {
+  const fh = await dir.getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(text); await w.close();
+}
+function downloadText(name, text) {
+  const blob = new Blob([text], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function hangerStatus(statusArr) {
+  if (!statusArr || !statusArr.length) return "pending";
+  const done = statusArr.filter(s => s === "done").length;
+  const skipped = statusArr.filter(s => s === "skipped").length;
+  const touched = done + skipped;
+  if (touched === 0) return "pending";
+  if (touched === statusArr.length) return skipped > 0 ? "partial" : "complete";
+  return "inprogress";
+}
+
+// ============================================================
+// PICTOGRAMS
+// ============================================================
+function Picto({ type }) {
+  const c = "#00E5D1", sw = 4;
+  if (type === "LOAD_BAR") return (
+    <svg className="picto" viewBox="0 0 100 100" fill="none">
+      {/* bar being lowered */}
+      <rect x="20" y="30" width="60" height="13" stroke={c} strokeWidth={sw} fill={c} fillOpacity="0.18" />
+      {/* down arrows */}
+      <path d="M35 48 L35 58 M31 54 L35 58 L39 54" stroke={c} strokeWidth={sw/1.4} strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M65 48 L65 58 M61 54 L65 58 L69 54" stroke={c} strokeWidth={sw/1.4} strokeLinecap="round" strokeLinejoin="round" />
+      {/* saw bed */}
+      <line x1="8" y1="70" x2="92" y2="70" stroke={c} strokeWidth={sw} />
+      <line x1="20" y1="70" x2="14" y2="84" stroke={c} strokeWidth={sw/1.6} />
+      <line x1="40" y1="70" x2="34" y2="84" stroke={c} strokeWidth={sw/1.6} />
+      <line x1="60" y1="70" x2="54" y2="84" stroke={c} strokeWidth={sw/1.6} />
+      <line x1="80" y1="70" x2="74" y2="84" stroke={c} strokeWidth={sw/1.6} />
+    </svg>);
+  if (type === "LABEL_HANGER") return (
+    <svg className="picto" viewBox="0 0 100 100" fill="none">
+      {/* bar */}
+      <rect x="8" y="68" width="84" height="14" stroke={c} strokeWidth={sw} fill={c} fillOpacity="0.12" />
+      {/* sticker on the bar */}
+      <rect x="32" y="30" width="44" height="32" rx="3" stroke={c} strokeWidth={sw} fill={c} fillOpacity="0.18" />
+      <line x1="39" y1="40" x2="69" y2="40" stroke={c} strokeWidth={sw/1.4} strokeLinecap="round" />
+      <line x1="39" y1="48" x2="62" y2="48" stroke={c} strokeWidth={sw/1.4} strokeLinecap="round" />
+      <line x1="39" y1="56" x2="66" y2="56" stroke={c} strokeWidth={sw/1.4} strokeLinecap="round" opacity="0.6" />
+    </svg>);
+  if (type === "CUT_BAR") return (
+    <svg className="picto" viewBox="0 0 100 100" fill="none">
+      <rect x="8" y="54" width="84" height="16" stroke={c} strokeWidth={sw} fill={c} fillOpacity="0.18" />
+      <line x1="50" y1="38" x2="50" y2="86" stroke={c} strokeWidth={sw} strokeDasharray="4 4" />
+      <path d="M40 26 L50 38 L60 26" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>);
+  if (type === "MARK") return (
+    <svg className="picto" viewBox="0 0 100 100" fill="none">
+      {/* bar */}
+      <rect x="6" y="70" width="88" height="14" stroke={c} strokeWidth={sw} fill={c} fillOpacity="0.12" />
+      {/* distance dimension from left end to the mark */}
+      <line x1="8" y1="60" x2="56" y2="60" stroke={c} strokeWidth={sw/2} opacity="0.7" />
+      <line x1="8" y1="55" x2="8" y2="65" stroke={c} strokeWidth={sw/2} opacity="0.7" />
+      <line x1="56" y1="55" x2="56" y2="65" stroke={c} strokeWidth={sw/2} opacity="0.7" />
+      {/* the mark being drawn on the bar */}
+      <line x1="56" y1="66" x2="56" y2="88" stroke={c} strokeWidth={sw} />
+      {/* marker pen, nib at the mark, leaning back */}
+      <g transform="rotate(-32 56 64)">
+        <polygon points="56,64 50,52 62,52" fill={c} />
+        <rect x="50" y="22" width="12" height="30" stroke={c} strokeWidth={sw} fill="none" />
+        <rect x="50" y="14" width="12" height="8" fill={c} />
+      </g>
+    </svg>);
+  if (type === "INSERT_ROD") return (
+    <svg className="picto" viewBox="0 0 100 100" fill="none">
+      <path d="M50 8 L50 54 M42 16 L50 8 L58 16" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="46" y="54" width="8" height="22" fill={c} />
+      <rect x="15" y="76" width="70" height="15" stroke={c} strokeWidth={sw} fill="none" />
+    </svg>);
+  if (type === "ATTACH_CLAMP") return (
+    <svg className="picto" viewBox="0 0 100 100" fill="none">
+      <circle cx="50" cy="36" r="22" stroke={c} strokeWidth={sw} fill="none" />
+      <circle cx="50" cy="36" r="9" stroke={c} strokeWidth={sw} fill="none" opacity="0.5" />
+      <rect x="46" y="58" width="8" height="24" fill={c} />
+      <rect x="14" y="82" width="72" height="10" stroke={c} strokeWidth={sw/1.4} fill="none" />
+    </svg>);
+  return null;
+}
+
+function Chevron({ dir }) {
+  const d = dir === "left" ? "M16 6 L8 12 L16 18" : dir === "down" ? "M6 9 L12 15 L18 9" : "M9 6 L17 12 L9 18";
+  return <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d={d}/></svg>;
+}
+
+// ============================================================
+// HANGER DIAGRAM — to-scale side view
+//   compStatus(i,'rod'|'clamp') -> 'pending'|'done'|'skipped'  (production)
+// ============================================================
+function HangerDiagram({ hanger, mode="preview", activeClamp=-1, activeStage=null, compStatus=null }) {
+  const sorted = hanger.clamps;
+  const width = 600;
+  const maxH = Math.max(1, ...sorted.map(c => c.rodLength + c.diameter));
+  const pad = 56, barT = 30;
+  const scale = (width - pad*2) / Math.max(1, hanger.barLength);
+  const svgH = maxH*scale + barT*scale + pad*2 + 36;
+  const barY = svgH - pad - barT*scale;
+
+  const CY = "#00E5D1", CYM = "#2a9d96", AMB = "#FFB020", DIM = "#39414a", LAB = "#8a939c";
+  const colorFor = (i, which) => {
+    if (mode === "preview") return "#9aa0a8";
+    if (i === activeClamp && ((which==="rod"&&activeStage==="rod")||(which==="clamp"&&activeStage==="clamp")||(which==="base"&&(activeStage==="mark"||activeStage==="cut")))) return CY;
+    if (compStatus) { const s = compStatus(i, which==="base"?"clamp":which); if (s==="skipped") return AMB; if (s==="done") return CYM; }
+    return DIM;
+  };
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${width} ${svgH}`} style={{display:"block"}}>
+      <rect x={pad} y={barY} width={hanger.barLength*scale} height={barT*scale}
+        fill={mode==="preview"?"#4a5058":"#23282d"} stroke={mode==="preview"?"#6a7078":"#2c3238"} strokeWidth="1" />
+      {sorted.map((c, i) => {
+        const x = pad + c.position*scale;
+        const rodTopY = barY - c.rodLength*scale;
+        const r = (c.diameter/2)*scale;
+        const cyc = rodTopY - r;
+        const active = i === activeClamp;
+        return (
+          <g key={i}>
+            <rect x={x-5*scale} y={rodTopY} width={10*scale} height={c.rodLength*scale} fill={colorFor(i,"rod")} opacity={active?1:0.85} />
+            <rect x={x-8*scale} y={barY-6*scale} width={16*scale} height={6*scale} fill={colorFor(i,"base")} opacity={0.85} />
+            <circle cx={x} cy={cyc} r={r} fill="none" stroke={colorFor(i,"clamp")} strokeWidth={Math.max(1.5,3*scale)} opacity={active?1:0.85} />
+            {mode==="preview" && <>
+              <text x={x} y={cyc-r-7} textAnchor="middle" fill={LAB} fontSize="11" fontFamily="ui-monospace,monospace">{"\u00D8"}{c.diameter}</text>
+              <text x={x+8*scale+4} y={rodTopY+(c.rodLength*scale)/2} fill={LAB} fontSize="11" fontFamily="ui-monospace,monospace" dominantBaseline="middle">{c.rodLength}</text>
+            </>}
+            {/* mark distance — always visible (muted in production for double-checking) */}
+            <line x1={pad} y1={barY+barT*scale+10} x2={x} y2={barY+barT*scale+10} stroke={DIM} strokeWidth="1" />
+            <text x={x} y={barY+barT*scale+22} textAnchor="middle" fill={mode==="preview"?CYM:LAB} fontSize="11" fontFamily="ui-monospace,monospace" fontWeight={mode==="preview"?700:400}>{c.position}</text>
+          </g>
+        );
+      })}
+      {mode==="preview" && <>
+        <line x1={pad} y1={svgH-14} x2={pad+hanger.barLength*scale} y2={svgH-14} stroke={LAB} strokeWidth="1" />
+        <text x={pad+(hanger.barLength*scale)/2} y={svgH-2} textAnchor="middle" fill={LAB} fontSize="11" fontFamily="ui-monospace,monospace">{hanger.barLength} mm</text>
+      </>}
+    </svg>
+  );
+}
+
+// ============================================================
+// REORDER RECORD — aggregate skipped components across all hangers
+// ============================================================
+function buildRecord(hangers, statuses) {
+  let barLen = 0, rodCount = 0, rodLen = 0;
+  const clampByDia = {};
+  const perHanger = [];
+  hangers.forEach((h, hi) => {
+    const missing = [];
+    h.tasks.forEach((t, ti) => {
+      if (statuses[hi][ti] !== "skipped") return;
+      if (t.type === "CUT_BAR") { barLen += t.value; missing.push(`base bar ${t.value}mm`); }
+      else if (t.type === "INSERT_ROD") { rodCount++; rodLen += t.value; missing.push(`rod ${t.value}mm (mark ${t.clampIndex+1})`); }
+      else if (t.type === "ATTACH_CLAMP") { clampByDia[t.value] = (clampByDia[t.value]||0)+1; missing.push(`clamp \u00D8${t.value} (mark ${t.clampIndex+1})`); }
+    });
+    if (missing.length) perHanger.push({ id: h.id, missing });
+  });
+  return { barLen, rodCount, rodLen, clampByDia, perHanger };
+}
+
+// ============================================================
+// MAIN APP
+// ============================================================
+function App() {
+  // restore last session (best-effort; localStorage may be unavailable in some sandboxes)
+  const saved = useRef((() => {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      if (!s || !Array.isArray(s.hangers) || !s.hangers.length) return null;
+      s.hangers = s.hangers.map(h => ({ ...h, tasks: generateTasks(h) }));
+      return s;
+    } catch (e) { return null; }
+  })()).current;
+
+  const [hangers, setHangers] = useState(saved ? saved.hangers : []);    // cleaned + .tasks
+  const [statuses, setStatuses] = useState(saved ? saved.statuses : []); // per hanger: array of 'pending'|'done'|'skipped'
+  const [fileName, setFileName] = useState(saved ? saved.fileName : "");
+  const [dirHandle, setDirHandle] = useState(null);     // FileSystemDirectoryHandle — not persistable, re-pick next day
+  const [printerHandle, setPrinterHandle] = useState(null); // printer/Documents output — session-scoped, own picker id
+  const [raw, setRaw] = useState(saved && saved.raw ? saved.raw : null); // verbatim CSV pieces for export
+  const [csvChoices, setCsvChoices] = useState(null);   // [{name, handle}] when a folder has multiple CSVs
+  const [exportMsg, setExportMsg] = useState(null);
+  const [error, setError] = useState(null);
+  const [screen, setScreen] = useState(saved ? saved.screen : "load");   // load|pickcsv|planning|preview|production|hangerDone|complete
+  const [hIdx, setHIdx] = useState(saved ? saved.hIdx : 0);
+  const [tIdx, setTIdx] = useState(saved ? saved.tIdx : 0);
+  const [wasteBars, setWasteBars] = useState(saved && saved.wasteBars ? saved.wasteBars : [{ length: "", qty: "" }]);
+  const [stockLen, setStockLen] = useState(saved && saved.stockLen ? saved.stockLen : 6000);
+  const [plan, setPlan] = useState(saved && saved.plan ? saved.plan : null);
+  const [fileMenu, setFileMenu] = useState(false);  // File ▾ dropdown open
+  const [armed, setArmed] = useState(null);         // which destructive File action is armed for confirm
+  const [folderCsvN, setFolderCsvN] = useState(0);  // # of CSVs in the current folder (gates "Switch CSV")
+  const fileInput = useRef(null);
+
+  // persist on any meaningful change (tasks stripped — regenerated on restore)
+  useEffect(() => {
+    try {
+      if (!hangers.length) { localStorage.removeItem(STORE_KEY); return; }
+      localStorage.setItem(STORE_KEY, JSON.stringify({
+        hangers: hangers.map(({ tasks, ...h }) => h), statuses, fileName, screen, hIdx, tIdx,
+        wasteBars, stockLen, plan, raw,
+      }));
+    } catch (e) { /* storage blocked — degrade silently */ }
+  }, [hangers, statuses, fileName, screen, hIdx, tIdx, wasteBars, stockLen, plan, raw]);
+
+  const fsaDir = typeof window !== "undefined" && !!window.showDirectoryPicker;
+
+  function loadText(text, name, dir) {
+    const { hangers: parsed, error, raw: rawParts } = parseCSV(text);
+    if (error) { setError(error); return; }
+    if (!parsed.length) { setError("No hanger rows found in file."); return; }
+    const cleaned = parsed.map(r => { const c = cleanHanger(r); return { ...c, tasks: generateTasks(c) }; });
+    setHangers(cleaned);
+    setStatuses(cleaned.map(c => c.tasks.map(() => "pending")));
+    setFileName(name); setRaw(rawParts); if (dir !== undefined) setDirHandle(dir || null);
+    setCsvChoices(null); setExportMsg(null); setError(null);
+    setHIdx(0); setTIdx(0); setPlan(null); setScreen("planning");
+  }
+
+  // pick a FOLDER (read-write); load the CSV inside it. Lets us write outputs back.
+  async function openPicker() {
+    if (fsaDir) {
+      try {
+        const dir = await window.showDirectoryPicker({ id: "smh-dir", mode: "readwrite", startIn: "documents" });
+        const csvs = [];
+        for await (const [nm, h] of dir.entries()) {
+          if (h.kind === "file" && /\.csv$/i.test(nm) && !/ - production\.csv$/i.test(nm)) csvs.push({ name: nm, handle: h });
+        }
+        if (!csvs.length) { setDirHandle(dir); setFolderCsvN(0); setError("No CSV files in that folder."); return; }
+        setFolderCsvN(csvs.length);
+        if (csvs.length === 1) { const f = await csvs[0].handle.getFile(); loadText(await f.text(), csvs[0].name, dir); }
+        else { setDirHandle(dir); setCsvChoices(csvs.sort((a,b)=>a.name.localeCompare(b.name))); setError(null); setScreen("pickcsv"); }
+      } catch (e) { /* cancelled */ }
+    } else { fileInput.current && fileInput.current.click(); }
+  }
+  async function chooseCsv(choice) {
+    const f = await choice.handle.getFile();
+    loadText(await f.text(), choice.name, dirHandle);
+  }
+  // printer/sticker output folder — own picker id (independent memory from the
+  // source folder), opens at Documents the first time. Session-scoped handle.
+  async function pickPrinterDir() {
+    if (!fsaDir) return;
+    try {
+      const dir = await window.showDirectoryPicker({ id: "smh-printer", mode: "readwrite", startIn: "documents" });
+      setPrinterHandle(dir); setError(null);
+    } catch (e) { /* cancelled */ }
+  }
+  // re-read the CURRENT csv from disk (File-menu guards the progress warning)
+  async function doReload() {
+    if (dirHandle && fileName) {
+      try { const fh = await dirHandle.getFileHandle(fileName); const f = await fh.getFile(); loadText(await f.text(), fileName, dirHandle); return; }
+      catch (e) { /* handle lost — fall through to re-pick */ }
+    }
+    openPicker();
+  }
+  // pick a different CSV in the SAME folder — re-enumerate and show the chooser
+  async function switchCsv() {
+    if (!dirHandle) { openPicker(); return; }
+    try {
+      const csvs = [];
+      for await (const [nm, h] of dirHandle.entries()) {
+        if (h.kind === "file" && /\.csv$/i.test(nm) && !/ - production\.csv$/i.test(nm)) csvs.push({ name: nm, handle: h });
+      }
+      setFolderCsvN(csvs.length);
+      if (!csvs.length) { setError("No CSV files in that folder."); return; }
+      setCsvChoices(csvs.sort((a,b)=>a.name.localeCompare(b.name))); setError(null); setScreen("pickcsv");
+    } catch (e) { openPicker(); }
+  }
+  function onInput(e) {
+    const f = e.target.files && e.target.files[0]; if (!f) return;
+    const r = new FileReader(); r.onload = () => loadText(r.result, f.name, null); r.readAsText(f);
+    e.target.value = "";
+  }
+
+  // write the reordered CSV twice: production copy to the SOURCE folder, and a
+  // timestamped copy to the PRINTER folder. Each falls back to a download.
+  async function exportPlanCSV() {
+    if (!plan || !raw) return;
+    const text = buildExportCSV(plan, raw);
+    const prodName = exportName(fileName);
+    const stampName = timestampName();
+    const msgs = [];
+
+    if (dirHandle) {
+      try { await writeToDir(dirHandle, prodName, text); msgs.push(prodName + " \u2192 source folder"); }
+      catch (e) { downloadText(prodName, text); msgs.push(prodName + " \u2192 Downloads (source write failed)"); }
+    } else { downloadText(prodName, text); msgs.push(prodName + " \u2192 Downloads"); }
+
+    if (printerHandle) {
+      try { await writeToDir(printerHandle, stampName, text); msgs.push(stampName + " \u2192 " + printerHandle.name); }
+      catch (e) { downloadText(stampName, text); msgs.push(stampName + " \u2192 Downloads (printer write failed)"); }
+    } else { downloadText(stampName, text); msgs.push(stampName + " \u2192 Downloads"); }
+
+    setExportMsg(msgs.join(" \u00B7 "));
+  }
+
+  const cur = hangers[hIdx];
+  const tasks = cur ? cur.tasks : [];
+  const task = tasks[tIdx];
+  const curStatus = statuses[hIdx] || [];
+
+  const setStatus = (hi, ti, val) => setStatuses(prev => { const c = prev.map(a => a.slice()); c[hi][ti] = val; return c; });
+  const compStatus = (i, which) => {
+    // find the rod/clamp task for clamp i in current hanger
+    const ti = tasks.findIndex(t => t.clampIndex === i && t.component === which);
+    return ti === -1 ? "pending" : curStatus[ti];
+  };
+
+  const advance = () => { if (tIdx < tasks.length - 1) setTIdx(tIdx + 1); else setScreen("hangerDone"); };
+
+  // --- planning ---
+  const setWaste = (i, key, val) => setWasteBars(prev => prev.map((w, k) => k === i ? { ...w, [key]: val } : w));
+  const addWasteRow = () => setWasteBars(prev => [...prev, { length: "", qty: "" }]);
+  const removeWasteRow = (i) => setWasteBars(prev => prev.length > 1 ? prev.filter((_, k) => k !== i) : prev);
+  const doPlan = () => {
+    const ws = wasteBars.map(w => ({ length: parseFloat(w.length) || 0, qty: parseInt(w.qty) || 0 })).filter(w => w.length > 0 && w.qty > 0);
+    const sl = parseFloat(stockLen) || 0;
+    if (sl <= 0) { setError("Enter a stock bar length."); return; }
+    const result = packBars(hangers, ws, sl);
+    // reorder hangers to planned cut order; annotate barLoad; regenerate tasks (adds LOAD BAR steps)
+    const reordered = result.order.map(i => {
+      const h = { ...hangers[i], barLoad: result.loadAt[i] || null };
+      return { ...h, tasks: generateTasks(h) };
+    });
+    const reStatus = reordered.map(h => h.tasks.map(() => "pending"));
+    setHangers(reordered);
+    setStatuses(reStatus);
+    const { loadAt, ...planStore } = result;
+    setPlan({ ...planStore, stockLen: sl });
+    setError(null);
+  };
+  const beginProduction = async () => {
+    if (fsaDir && !printerHandle) { setError("Pick the printer output location first."); return; }
+    await exportPlanCSV();
+    // waste bars the plan consumes are spoken for — deduct them from the
+    // persisted on-hand inventory so the next run starts from what's left.
+    if (plan && plan.bins) {
+      const usedByLen = {};
+      plan.bins.forEach(b => { if (b.type === "waste") usedByLen[b.cap] = (usedByLen[b.cap] || 0) + 1; });
+      setWasteBars(prev => {
+        const out = [];
+        prev.forEach(w => {
+          const len = parseFloat(w.length) || 0;
+          const q = parseInt(w.qty) || 0;
+          const take = len > 0 ? Math.min(q, usedByLen[len] || 0) : 0;
+          if (take > 0) usedByLen[len] -= take;
+          const left = q - take;
+          if (len > 0 && q > 0 && left <= 0) return;            // fully consumed → drop row
+          out.push(take > 0 ? { ...w, qty: String(left) } : w); // reduced, or untouched
+        });
+        return out.length ? out : [{ length: "", qty: "" }];
+      });
+    }
+    setHIdx(0); setTIdx(0); setScreen("preview");
+  };
+
+  const next = () => { setStatus(hIdx, tIdx, "done"); advance(); };
+  const back = () => { if (tIdx > 0) setTIdx(tIdx - 1); else setScreen("preview"); };
+  const skipComponent = () => { if (!task.skippable) return; setStatus(hIdx, tIdx, "skipped"); advance(); };
+  const goNextHanger = () => {
+    if (hIdx < hangers.length - 1) { setHIdx(hIdx + 1); setTIdx(0); setScreen("preview"); }
+    else setScreen("complete");
+  };
+  const skipHanger = () => {
+    setStatuses(prev => { const c = prev.map(a => a.slice());
+      for (let i = tIdx; i < tasks.length; i++) if (c[hIdx][i] !== "done") c[hIdx][i] = "skipped";
+      return c; });
+    goNextHanger();
+  };
+  const jumpTo = (i) => { setHIdx(i); setTIdx(0); setScreen("preview"); };
+  const startHanger = () => { setTIdx(0); setScreen("production"); };
+
+  // --- keyboard: Space / ArrowRight = primary (forward) action, ArrowLeft = back ---
+  useEffect(() => {
+    const onKey = (e) => {
+      const t = e.target || {};
+      const tag = t.tagName || "";
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag) || t.isContentEditable) return; // don't hijack typing
+      if (e.repeat) return; // single-fire only — a held/stuck key must not advance repeatedly
+      if (fileMenu) return; // File menu open — don't advance/navigate underneath it
+      const fwd = e.key === " " || e.code === "Space" || e.key === "Spacebar" || e.key === "ArrowRight";
+      if (fwd) {
+        e.preventDefault(); // stop page scroll
+        if (screen === "load") openPicker();
+        else if (screen === "planning") { if (plan) beginProduction(); else doPlan(); }
+        else if (screen === "preview") startHanger();
+        else if (screen === "production") next();
+        else if (screen === "hangerDone") goNextHanger();
+      } else if (e.key === "ArrowLeft") {
+        if (screen === "production") { e.preventDefault(); back(); }
+        else if (screen === "hangerDone") { e.preventDefault(); setTIdx(tasks.length - 1); setScreen("production"); }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [screen, plan, tIdx, hIdx, tasks.length, hangers.length, wasteBars, stockLen, printerHandle, dirHandle, fileMenu]);
+
+  // File ▾ menu — available on planning + the framed screens. Destructive actions
+  // are guarded only when there's build progress to lose.
+  const anyProgress = statuses.some(a => a.some(s => s !== "pending"));
+  const closeFileMenu = () => { setFileMenu(false); setArmed(null); };
+  const fileAct = (key, fn) => { if (anyProgress && armed !== key) { setArmed(key); return; } closeFileMenu(); fn(); };
+  const fmLabel = (base, key) => (anyProgress && armed === key) ? "Discard progress & " + base.toLowerCase() : base;
+  const FileMenu = () => (
+    <div className="filemenu">
+      <button className="fmbtn" onClick={() => fileMenu ? closeFileMenu() : setFileMenu(true)}>FILE <Chevron dir="down" /></button>
+      {fileMenu && <>
+        <div className="fmback" onClick={closeFileMenu} />
+        <div className="fmpanel">
+          {anyProgress && <div className="fmwarn">This run has progress — switching discards it.</div>}
+          {dirHandle ? <>
+            <button className={"fmitem" + (armed==="reload"?" armed":"")} onClick={() => fileAct("reload", doReload)}>{fmLabel("Reload this file", "reload")}</button>
+            {folderCsvN > 1 &&
+              <button className={"fmitem" + (armed==="switch"?" armed":"")} onClick={() => fileAct("switch", switchCsv)}>{fmLabel("Switch CSV", "switch")} <span className="sub">in this folder</span></button>}
+            <button className={"fmitem" + (armed==="folder"?" armed":"")} onClick={() => fileAct("folder", openPicker)}>{fmLabel("Change folder\u2026", "folder")}</button>
+          </> : (
+            // no live folder handle (restored session / no-FS-Access) — reload/switch can't work, so just offer to open
+            <button className={"fmitem" + (armed==="open"?" armed":"")} onClick={() => fileAct("open", openPicker)}>{fmLabel(fsaDir ? "Open folder\u2026" : "Open file\u2026", "open")}</button>
+          )}
+        </div>
+      </>}
+    </div>
+  );
+
+  // ---- LOAD SCREEN ----
+  if (screen === "load") {
+    return (
+      <div className="wrap">
+        <div className="head row between">
+          <div><div className="label">SMART-HANGER</div><div className="hid">OPERATOR</div></div>
+          <div className="tag">NO FILE</div>
+        </div>
+        {error && <div className="err" style={{marginBottom:16}}>{error}</div>}
+        <div className="panel center" style={{padding:"56px 24px", display:"flex", flexDirection:"column", alignItems:"center", gap:20}}>
+          <div className="label">{fsaDir ? "OPEN THE PRODUCTION FOLDER TO BEGIN" : "LOAD A REVIT CSV EXPORT TO BEGIN"}</div>
+          <button className="btn-primary" style={{maxWidth:420}} onClick={openPicker}>{fsaDir ? "OPEN FOLDER" : "LOAD CSV"}</button>
+          <div className="detail">{fsaDir
+            ? "Pick the folder your CSV is in — the reordered plan gets written back there."
+            : "On iPad, pick the file directly; the plan will download to Downloads."}</div>
+        </div>
+        <input ref={fileInput} type="file" accept=".csv,text/csv" onChange={onInput} style={{display:"none"}} />
+      </div>
+    );
+  }
+
+  // ---- CSV CHOOSER (folder had more than one CSV) ----
+  if (screen === "pickcsv") {
+    return (
+      <div className="wrap">
+        <div className="head row between">
+          <div><div className="label">FOLDER</div><div className="hid">CHOOSE CSV</div></div>
+          <button className="tag" onClick={openPicker}>CHANGE FOLDER</button>
+        </div>
+        <div className="label" style={{marginBottom:8}}>{csvChoices ? csvChoices.length : 0} CSV FILES FOUND</div>
+        <div className="panel" style={{padding:10}}>
+          {csvChoices && csvChoices.map((c, i) => (
+            <button key={i} className="csvchoice" onClick={() => chooseCsv(c)}>{c.name} <Chevron dir="right" /></button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ---- PLANNING SCREEN ----
+  if (screen === "planning") {
+    const totalBars = (plan ? plan.stockCount + plan.wasteUsed : 0);
+    return (
+      <div className="wrap">
+        <div className="head row between">
+          <div style={{minWidth:0}}>
+            <div className="label">FILE</div>
+            <div className="hid">{fileName}</div>
+            {dirHandle && <div className="label" style={{marginTop:4}}>FOLDER: {dirHandle.name}</div>}
+          </div>
+          <div className="row" style={{gap:10}}>
+            <div className="tag">{hangers.length} HANGERS</div>
+            <FileMenu />
+          </div>
+        </div>
+        {error && <div className="err" style={{marginBottom:16}}>{error}</div>}
+
+        <div className="label" style={{marginBottom:8}}>WASTE BARS ON HAND (USED FIRST)</div>
+        <div className="panel" style={{padding:14, marginBottom:16}}>
+          {wasteBars.map((w, i) => (
+            <div className="row" key={i} style={{gap:10, marginBottom:10}}>
+              <div style={{flex:1}}>
+                <div className="ilabel">LENGTH mm</div>
+                <input className="inp" type="number" inputMode="numeric" value={w.length}
+                  onChange={e => setWaste(i, "length", e.target.value)} placeholder="e.g. 1800" />
+              </div>
+              <div style={{flex:1}}>
+                <div className="ilabel">QTY</div>
+                <input className="inp" type="number" inputMode="numeric" value={w.qty}
+                  onChange={e => setWaste(i, "qty", e.target.value)} placeholder="e.g. 3" />
+              </div>
+              <button className="rowdel" onClick={() => removeWasteRow(i)} title="remove">{"\u00D7"}</button>
+            </div>
+          ))}
+          <button className="btn-ghost" style={{padding:"10px 18px"}} onClick={addWasteRow}>+ ADD WASTE BAR</button>
+        </div>
+
+        <div className="label" style={{marginBottom:8}}>STOCK BAR LENGTH</div>
+        <div className="panel" style={{padding:14, marginBottom:20}}>
+          <div style={{maxWidth:220}}>
+            <div className="ilabel">LENGTH mm</div>
+            <input className="inp" type="number" inputMode="numeric" value={stockLen}
+              onChange={e => setStockLen(e.target.value)} placeholder="e.g. 6000" />
+          </div>
+        </div>
+
+        <button className="btn-primary" onClick={doPlan}>PLAN PRODUCTION</button>
+
+        {plan && <>
+          <div className="h2">PLAN</div>
+          <div className="stat" style={{justifyContent:"flex-start"}}>
+            <div className="b" style={{borderColor:"var(--cyan)", color:"var(--cyan)"}}>STOCK BARS NEEDED <b>{plan.stockCount}</b></div>
+            <div className="b">WASTE BARS USED <b>{plan.wasteUsed}</b></div>
+            <div className="b">TOTAL BARS <b>{totalBars}</b></div>
+          </div>
+          {plan.unplaceable.length > 0 &&
+            <div className="err" style={{margin:"12px 0"}}>
+              {plan.unplaceable.length} piece(s) longer than a stock bar — can't be cut from stock: {plan.unplaceable.map(u => `${u.id} (${u.len}mm)`).join(", ")}. Left at end of run.
+            </div>}
+          <div className="h2">CUT PLAN — BAR BY BAR</div>
+          <div className="panel" style={{padding:"6px 10px", marginBottom:18, maxHeight:300, overflowY:"auto"}}>
+            {plan.bins.map((b, i) => (
+              <div key={i} className="binrow">
+                <span className={"bintag " + (b.type === "waste" ? "waste" : "stock")}>{b.type === "waste" ? "WASTE" : "STOCK"} {b.cap}mm</span>
+                <span className="binpieces">{b.pieces.map(p => p.len).join(" + ")}</span>
+                <span className="binrem">{b.rem}mm left</span>
+              </div>
+            ))}
+          </div>
+          {fsaDir && (
+            printerHandle
+              ? <div className="okbar row between" style={{gap:10}}>
+                  <span>{"\u2713"} PRINTER OUTPUT: {printerHandle.name}</span>
+                  <button className="tag" onClick={pickPrinterDir}>CHANGE</button>
+                </div>
+              : <button className="btn-skip" style={{width:"100%", marginBottom:14}} onClick={pickPrinterDir}>
+                  PICK PRINTER OUTPUT LOCATION (DOCUMENTS)
+                </button>
+          )}
+          <button className="btn-primary" onClick={beginProduction}
+            disabled={fsaDir && !printerHandle}
+            style={fsaDir && !printerHandle ? {opacity:0.45} : undefined}>
+            BEGIN PRODUCTION <Chevron dir="right" />
+          </button>
+          {fsaDir && !printerHandle && <div className="label center" style={{marginTop:8}}>SET PRINTER OUTPUT FIRST</div>}
+        </>}
+        <input ref={fileInput} type="file" accept=".csv,text/csv" onChange={onInput} style={{display:"none"}} />
+      </div>
+    );
+  }
+  // persistent frame for the per-hanger screens: title bar + left queue rail + body
+  const Frame = ({ children, prog }) => (
+    <div className="shell">
+      <div className="titlebar">
+        <div style={{minWidth:0}}>
+          <div className="tb-file">{dirHandle && <><b>{dirHandle.name}</b> / </>}{fileName}</div>
+          <div className="tb-hid">{cur.id}<small>HANGER {hIdx+1}/{hangers.length}</small></div>
+        </div>
+        <div className="tb-right">
+          {prog != null && <span className="tb-prog">{prog}%</span>}
+          <FileMenu />
+        </div>
+      </div>
+      <div className="framerow">
+        <div className="rail">
+          <div className="raillabel">QUEUE</div>
+          {hangers.map((h, i) => {
+            const st = hangerStatus(statuses[i]);
+            return (
+              <button key={i} className={"chip s-"+st+(i===hIdx?" current":"")} onClick={() => jumpTo(i)}>
+                <span className="dot" />{h.id}
+              </button>
+            );
+          })}
+        </div>
+        <div className="body">{children}</div>
+      </div>
+      <input ref={fileInput} type="file" accept=".csv,text/csv" onChange={onInput} style={{display:"none"}} />
+    </div>
+  );
+
+  // ---- PREVIEW ----
+  if (screen === "preview") {
+    const st = hangerStatus(curStatus);
+    return (
+      <Frame>
+        {exportMsg && <div className="okbar">{"\u2713"} {exportMsg}</div>}
+        <div className="label" style={{marginBottom:6}}>VERIFY AGAINST DRAWING</div>
+        <div className="panel" style={{padding:"14px 8px", marginBottom:16}}>
+          <HangerDiagram hanger={cur} mode="preview" />
+        </div>
+        <div className="spec" style={{marginBottom:8, maxWidth:620}}>
+          <div className="k">BAR LENGTH</div><div className="v">{cur.barLength} mm</div>
+          <div className="k">CLAMPS</div><div className="v">{cur.clamps.length}</div>
+          <div className="k">MARKS (from left)</div><div className="v">{cur.clamps.map(c=>c.position).join(" \u00B7 ")}</div>
+          <div className="k">ROD LENGTHS</div><div className="v">{cur.clamps.map(c=>c.rodLength).join(" \u00B7 ")}</div>
+          <div className="k">CLAMP \u00D8</div><div className="v">{cur.clamps.map(c=>c.diameter).join(" \u00B7 ")}</div>
+        </div>
+        {st !== "pending" && <div className="badge" style={{display:"inline-block", marginBottom:14}}>{st === "complete" ? "ALREADY COMPLETE" : st === "partial" ? "PARTIAL — HAS SKIPPED ITEMS" : "IN PROGRESS"}</div>}
+        <button className="btn-primary" style={{maxWidth:520}} onClick={startHanger}>
+          {st==="pending" ? "START ASSEMBLY" : "RESUME"} <Chevron dir="right" />
+        </button>
+      </Frame>
+    );
+  }
+
+  // ---- PRODUCTION ----
+  if (screen === "production" && task) {
+    const progress = Math.round(((tIdx + 1) / tasks.length) * 100);
+    const wasSkipped = curStatus[tIdx] === "skipped";
+    const isPrep = task.type === "CUT_BAR" || task.type === "LOAD_BAR";
+    return (
+      <Frame prog={progress}>
+        <div className="prod">
+          <div className="workcol">
+            <div className="pbar"><div style={{width:progress+"%"}} /></div>
+            <div className="panel minimap" style={{padding:8}}>
+              <HangerDiagram hanger={cur} mode="production" activeClamp={task.clampIndex} activeStage={task.stage} compStatus={compStatus} />
+            </div>
+            <div className={"card" + (isPrep?" skipcut":"")}>
+              <Picto type={task.type} />
+              <div className={"tasklabel" + (isPrep?" amber":"")}>{task.label}</div>
+              <div className={"bignum" + (typeof task.value === "string" ? " idtext" : "")}>{task.value}</div>
+              <div className="unit">{task.unit}</div>
+              <div className="detail">{task.detail}</div>
+              <div className="badgeslot">{wasSkipped && <span className="badge">PREVIOUSLY SKIPPED — NEXT TO COMPLETE</span>}</div>
+            </div>
+          </div>
+          <div className="ctrl">
+            <button className="btn-next" onClick={next}>NEXT <Chevron dir="right" /></button>
+            <button className="btn-back" onClick={back}><Chevron dir="left" /></button>
+            <div className="ctrl-gap" />
+            <button className="btn-skip" onClick={skipComponent} disabled={!task.skippable}>SKIP COMPONENT</button>
+            <button className="btn-skip" onClick={skipHanger}>SKIP TO NEXT HANGER</button>
+          </div>
+        </div>
+      </Frame>
+    );
+  }
+
+  // ---- HANGER DONE ----
+  if (screen === "hangerDone") {
+    const skipped = curStatus.filter(s => s === "skipped").length;
+    const last = hIdx === hangers.length - 1;
+    return (
+      <Frame>
+        <div className="panel center" style={{padding:"32px 20px", display:"flex", flexDirection:"column", alignItems:"center", gap:16, maxWidth:760, width:"100%", margin:"0 auto"}}>
+          <div className={"tasklabel" + (skipped?" amber":"")}>{skipped ? "HANGER PARTIAL" : "HANGER COMPLETE"}</div>
+          <div className="hid" style={{fontSize:36}}>{cur.id}</div>
+          <div className="stat">
+            <div className="b">DONE <b>{curStatus.filter(s=>s==="done").length}</b></div>
+            {skipped > 0 && <div className="b" style={{borderColor:"var(--amber)", color:"var(--amber)"}}>SKIPPED <b>{skipped}</b></div>}
+          </div>
+          <div className="panel" style={{padding:"10px 6px", width:"100%"}}>
+            <HangerDiagram hanger={cur} mode="production" compStatus={compStatus} />
+          </div>
+          <button className="btn-primary" onClick={goNextHanger}>{last ? "FINISH FILE" : "NEXT HANGER"} <Chevron dir="right" /></button>
+          <button className="btn-ghost" onClick={() => { setTIdx(tasks.length-1); setScreen("production"); }}><Chevron dir="left" /> BACK TO HANGER</button>
+        </div>
+      </Frame>
+    );
+  }
+
+  // ---- FILE COMPLETE + REORDER RECORD ----
+  if (screen === "complete") {
+    const rec = buildRecord(hangers, statuses);
+    const counts = hangers.reduce((a, h, i) => { const s = hangerStatus(statuses[i]); a[s] = (a[s]||0)+1; return a; }, {});
+    const clampRows = Object.keys(rec.clampByDia).sort((a,b)=>(+a)-(+b));
+    const recText = () => {
+      const L = [`SKIP / REORDER RECORD — ${fileName}`, ""];
+      L.push("REORDER TOTALS");
+      if (rec.barLen) L.push(`  base bar: ${rec.barLen} mm`);
+      if (rec.rodCount) L.push(`  threaded rod: ${rec.rodCount} pcs / ${rec.rodLen} mm`);
+      clampRows.forEach(d => L.push(`  clamp \u00D8${d}: ${rec.clampByDia[d]}`));
+      if (!rec.barLen && !rec.rodCount && !clampRows.length) L.push("  (nothing skipped)");
+      L.push("", "BY HANGER");
+      rec.perHanger.forEach(h => { L.push(`  ${h.id}:`); h.missing.forEach(m => L.push(`    - ${m}`)); });
+      return L.join("\n");
+    };
+    return (
+      <div className="wrap">
+        <div className="head row between">
+          <div><div className="label">FILE</div><div className="hid">{fileName}</div></div>
+          <div className="tag live">COMPLETE</div>
+        </div>
+        <div className="stat" style={{justifyContent:"flex-start"}}>
+          <div className="b">COMPLETE <b>{counts.complete||0}</b></div>
+          <div className="b" style={{borderColor:"var(--amber)", color:"var(--amber)"}}>PARTIAL <b>{counts.partial||0}</b></div>
+          <div className="b">UNTOUCHED <b>{(counts.pending||0)+(counts.inprogress||0)}</b></div>
+        </div>
+
+        <div className="h2">REORDER TOTALS (SKIPPED COMPONENTS)</div>
+        {(rec.barLen || rec.rodCount || clampRows.length) ? (
+          <table className="reorder">
+            <thead><tr><th>PART</th><th style={{textAlign:"right"}}>QTY</th></tr></thead>
+            <tbody>
+              {rec.barLen > 0 && <tr><td>Base bar</td><td className="num">{rec.barLen} mm</td></tr>}
+              {rec.rodCount > 0 && <tr><td>Threaded rod</td><td className="num">{rec.rodCount} pcs · {rec.rodLen} mm</td></tr>}
+              {clampRows.map(d => <tr key={d}><td>Clamp &#216;{d}</td><td className="num">{rec.clampByDia[d]}</td></tr>)}
+            </tbody>
+          </table>
+        ) : <div className="empty">Nothing skipped — everything built.</div>}
+
+        {rec.perHanger.length > 0 && <>
+          <div className="h2">BY HANGER — WHAT'S MISSING</div>
+          <table className="reorder">
+            <tbody>
+              {rec.perHanger.map(h => (
+                <tr key={h.id}><td style={{verticalAlign:"top", color:"var(--amber)"}}>{h.id}</td>
+                  <td>{h.missing.map((m,k)=><div key={k}>{m}</div>)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </>}
+
+        <div className="row" style={{gap:10, marginTop:24, flexWrap:"wrap"}}>
+          <button className="btn-ghost" onClick={() => navigator.clipboard && navigator.clipboard.writeText(recText())}>COPY RECORD</button>
+          <button className="btn-ghost" onClick={() => { setScreen("preview"); setHIdx(0); setTIdx(0); }}>REVIEW HANGERS</button>
+          <button className="btn-ghost" onClick={openPicker}>LOAD ANOTHER FILE</button>
+        </div>
+        <input ref={fileInput} type="file" accept=".csv,text/csv" onChange={onInput} style={{display:"none"}} />
+      </div>
+    );
+  }
+
+  return null;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
