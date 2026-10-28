@@ -6,7 +6,7 @@ CSV exported from Revit. One row per smart-hanger. Current sample in the project
 
 ## Hanger anatomy
 - **Base bar**: horizontal rail, typically <2m long.
-- **Threaded rods**: up to 10 per bar, each at an absolute position along the bar, with its own cut length (10mm dia).
+- **Threaded rods**: up to 20 per bar, each at an absolute position along the bar, with its own cut length (10mm dia).
 - **Pipe clamps**: one per rod, sits on top of the rod (rod through centre, circle balances on top), varies 15–200+mm diameter.
 
 ## CSV structure
@@ -21,12 +21,12 @@ The file carries a UTF-8 BOM and CRLF line endings (both preserved on export —
 ### Columns (46 in the current export)
 - `Family and Type` — hanger family/type string. A blank value here marks a non-data row (skip it).
 - `IronLength` — base bar length, mm.
-- 10 clamp slots, each three columns: **`SH_n_D`, `SH_n_X`, `SH_n_Y`**.
+- Up to 20 clamp slots (`MAX_SLOTS`; older 10-slot exports still load — absent columns read as empty), each three columns: **`SH_n_D`, `SH_n_X`, `SH_n_Y`**.
   - **`D` = clamp diameter (mm)**
   - **`X` = position on bar (absolute, mm from the left end)**
   - **`Y` = pipe CENTERLINE height (mm)** — *not consumed by either app*; it is the design elevation, printed on stickers for manual control only.
 - `Comments`, `Mark`, `MC Object Variable 4`, `MC Object Variable 3`.
-- 10 **`SH_n_ThreadLength`** columns (mm) — **the family-computed rod CUT length** for each slot. This is what the operator cuts and what the widget shows on INSERT ROD.
+- One **`SH_n_ThreadLength`** column per slot (mm) — **the family-computed rod CUT length** for each slot. This is what the operator cuts and what the widget shows on INSERT ROD.
 
 Columns are mapped **by name**, so reordering and renamed `MC Object Variable *` columns are tolerated. (Older exports used `MC Object Variable 2`; irrelevant — never read.)
 

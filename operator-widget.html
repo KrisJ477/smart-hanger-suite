@@ -186,7 +186,7 @@ const STORE_KEY = "smh-operator-v1";
 //   Requires SH_n_ThreadLength: old exports without it are refused.
 //   cleanHanger: purge filler (D===1), sort survivors by position
 // ============================================================
-const MAX_SLOTS = 10;
+const MAX_SLOTS = 20;
 
 function parseCSV(text) {
   if (!text || !text.trim()) return { hangers: [], error: null, empty: true };
