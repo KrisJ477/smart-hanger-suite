@@ -45,8 +45,8 @@ Counts (complete / partial / untouched), plus the **skip record**: reorder total
 1. **LOAD BAR** — only when this hanger is the first piece cut from a new bar (set by the planner). Number = bar length; detail = "Put this WASTE/STOCK bar on the saw."
 2. **CUT BAR** — mandatory, cannot be skipped. (At this step, SKIP TO NEXT HANGER drops the whole hanger.)
 3. **LABEL HANGER** — stick an ID sticker on the base bar. The hanger **ID is shown in the big display** (text-sized variant).
-4. **MARK** ×n — one screen per clamp position, **absolute distance from the left end**, left → right. Marks all happen before any rod goes in.
-5. Per clamp, left → right: **INSERT ROD** (rod **cut** length = `SH_n_ThreadLength`) → **ATTACH CLAMP** (clamp Ø).
+4. **MARK** ×n — one screen per clamp position, **absolute distance from the left end**, left → right. Marks all happen before any rod goes in. A position with a **blank `ThreadLength`** is a **ROD MARK** instead: same screen shape, rod-marker pen, and nothing follows for it (no rod, no clamp).
+5. Per clamp (rod-mark positions excluded), left → right: **INSERT ROD** (rod **cut** length = `SH_n_ThreadLength`) → **ATTACH CLAMP** (clamp Ø).
 
 ## Skips (component-level)
 - **SKIP COMPONENT** — drop the current rod/clamp only (enabled on INSERT_ROD / ATTACH_CLAMP).
@@ -60,7 +60,7 @@ Counts (complete / partial / untouched), plus the **skip record**: reorder total
 - Open question: hardware form. A foot pedal or button emitting Space/Right would drive NEXT hands-free.
 
 ## Task types & pictograms
-`LOAD_BAR` (bar lowering onto saw bed), `CUT_BAR` (bar + cut line), `LABEL_HANGER` (sticker on bar), `MARK` (marker pen + dimension from left), `INSERT_ROD` (rod into bar), `ATTACH_CLAMP` (ring on rod). `FEED_BAR` is removed.
+`LOAD_BAR` (bar lowering onto saw bed), `CUT_BAR` (bar + cut line), `LABEL_HANGER` (sticker on bar), `MARK` (marker pen + dimension from left), `ROD_MARK` (marker pen + ringed mark — pen only, nothing fitted), `INSERT_ROD` (rod into bar), `ATTACH_CLAMP` (ring on rod). `FEED_BAR` is removed. In the diagram a rod-mark position is a dashed tick with a hollow ring, no rod, no clamp.
 
 ## Persistence
 `localStorage` saves hangers (tasks stripped, regenerated on load), statuses, file name, screen, indices, waste/stock inputs, plan, and the raw CSV parts needed for export. Reopening resumes the session. Cleared when a new file is loaded or the queue is empty. **Both folder handles (source + printer) are session-scoped** — not persisted across a full browser restart, so re-pick them next day.

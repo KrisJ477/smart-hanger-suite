@@ -76,6 +76,7 @@ Apps are deliberately separate. They share the CSV ingest/cleanup/sort logic and
 - Widget granularity: one atomic action per task. No batching.
 - Per-hanger task order: **LOAD BAR (only when a new bar starts) → CUT (first, mandatory) → LABEL HANGER → MARK (absolute distances, one per screen) → per clamp INSERT ROD → ATTACH CLAMP.** No feed steps.
 - **Rod length = `SH_n_ThreadLength`** (family-computed cut length). `SH_n_Y` is the pipe centerline — sticker-only, never consumed. Exports without `ThreadLength` are **refused on load** (cut length isn't derivable).
+- **Blank `ThreadLength` on a slot = rod-mark position** (`markOnly`): one **ROD MARK** task (pen mark with the rod-marker), no INSERT ROD, no ATTACH CLAMP, drawn as a tick + hollow ring. BOM counts it as "Rod marks", not rod mm or clamps.
 - Operator works a **sequential queue through the whole file**, in the planned cut order. Free navigation via a **vertical queue rail** on the left of the framed screens.
 - Skips are **component-level**: two buttons (SKIP COMPONENT / SKIP TO NEXT HANGER). Cut can't be skipped. Skipped items are amber, revisitable, and aggregated into an end-of-run reorder record.
 - **Production planning** up front: enter waste bars + stock length, greedy pack (waste first), reorder the run, report stock count. **Consumed waste bars are auto-deducted** from the persisted on-hand inventory on Begin Production.

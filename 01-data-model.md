@@ -27,6 +27,7 @@ The file carries a UTF-8 BOM and CRLF line endings (both preserved on export —
   - **`Y` = pipe CENTERLINE height (mm)** — *not consumed by either app*; it is the design elevation, printed on stickers for manual control only.
 - `Comments`, `Mark`, `MC Object Variable 4`, `MC Object Variable 3`. **Hanger ID = `Comments` → `Mark` → `row N`** (first non-blank). The HA-n.n labels live in `Comments`; `Mark` may hold a free-text description and is only used as the ID when `Comments` is empty.
 - One **`SH_n_ThreadLength`** column per slot (mm) — **the family-computed rod CUT length** for each slot. This is what the operator cuts and what the widget shows on INSERT ROD.
+  - **Blank `ThreadLength` on a slot that has a `D`/`X` = a rod-mark position** (`markOnly` after cleanup): the operator pen-marks it with the rod-marker, **no rod is cut and no clamp is fitted**. Used for rail joints / bolt crossings. The widget emits a single ROD MARK task for it; the BOM counts it under "Rod marks", not under rod mm or clamps.
 
 Columns are mapped **by name**, so reordering and renamed `MC Object Variable *` columns are tolerated. (Older exports used `MC Object Variable 2`; irrelevant — never read.)
 

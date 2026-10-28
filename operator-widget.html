@@ -257,7 +257,10 @@ function parseCSV(text) {
 }
 
 function cleanHanger(h) {
-  const clamps = h.slots.filter((s) => s.diameter !== 1).sort((a, b) => a.position - b.position);
+  // markOnly: slot has a clamp position but no ThreadLength (blank in the export) —
+  // a rod-marker position: the operator pen-marks it, no rod is cut, no clamp fitted.
+  const clamps = h.slots.filter((s) => s.diameter !== 1).sort((a, b) => a.position - b.position)
+    .map((s) => ({ ...s, markOnly: Number.isNaN(s.rodLength) }));
   return { ...h, clamps };
 }
 
@@ -284,11 +287,18 @@ function generateTasks(h) {
     detail:"Stick ID label on the base bar", clampIndex:-1, stage:"label", skippable:false });
 
   h.clamps.forEach((c, i) => {
+    if (c.markOnly) {
+      // rod-marker position: pen mark only — no INSERT ROD / ATTACH CLAMP follow
+      tasks.push({ type:"ROD_MARK", label:"ROD MARK", value:c.position, unit:"mm",
+        detail:`Mark ${i+1} of ${h.clamps.length}\u00A0\u2014 rod-marker pen only, no rod, no clamp`, clampIndex:i, stage:"mark", skippable:false, component:"mark" });
+      return;
+    }
     tasks.push({ type:"MARK", label:"MARK", value:c.position, unit:"mm",
       detail:`Mark ${i+1} of ${h.clamps.length}\u00A0\u2014 distance from left end`, clampIndex:i, stage:"mark", skippable:false });
   });
 
   h.clamps.forEach((c, i) => {
+    if (c.markOnly) return;
     tasks.push({ type:"INSERT_ROD", label:"INSERT ROD", value:c.rodLength, unit:"mm",
       detail:`Cut rod, screw into base nut at mark\u00A0${i+1}`, clampIndex:i, stage:"rod", skippable:true, component:"rod" });
     tasks.push({ type:"ATTACH_CLAMP", label:"ATTACH CLAMP", value:c.diameter, unit:"mm \u00D8",
@@ -492,6 +502,24 @@ function Picto({ type }) {
         <rect x="50" y="14" width="12" height="8" fill={c} />
       </g>
     </svg>);
+  if (type === "ROD_MARK") return (
+    <svg className="picto" viewBox="0 0 100 100" fill="none">
+      {/* bar */}
+      <rect x="6" y="70" width="88" height="14" stroke={c} strokeWidth={sw} fill={c} fillOpacity="0.12" />
+      {/* distance dimension from left end to the mark */}
+      <line x1="8" y1="60" x2="56" y2="60" stroke={c} strokeWidth={sw/2} opacity="0.7" />
+      <line x1="8" y1="55" x2="8" y2="65" stroke={c} strokeWidth={sw/2} opacity="0.7" />
+      <line x1="56" y1="55" x2="56" y2="65" stroke={c} strokeWidth={sw/2} opacity="0.7" />
+      {/* rod-marker: a ringed mark on the bar (hollow = nothing fitted) */}
+      <line x1="56" y1="66" x2="56" y2="88" stroke={c} strokeWidth={sw} />
+      <circle cx="56" cy="77" r="9" stroke={c} strokeWidth={sw/1.4} fill="none" />
+      {/* marker pen, nib at the mark, leaning back */}
+      <g transform="rotate(-32 56 64)">
+        <polygon points="56,64 50,52 62,52" fill={c} />
+        <rect x="50" y="22" width="12" height="30" stroke={c} strokeWidth={sw} fill="none" />
+        <rect x="50" y="14" width="12" height="8" fill={c} />
+      </g>
+    </svg>);
   if (type === "INSERT_ROD") return (
     <svg className="picto" viewBox="0 0 100 100" fill="none">
       <path d="M50 8 L50 54 M42 16 L50 8 L58 16" stroke={c} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
@@ -520,7 +548,8 @@ function Chevron({ dir }) {
 function HangerDiagram({ hanger, mode="preview", activeClamp=-1, activeStage=null, compStatus=null }) {
   const sorted = hanger.clamps;
   const width = 600;
-  const maxH = Math.max(1, ...sorted.map(c => c.rodLength + c.diameter));
+  const MARK_H = 60; // marker glyph height (mm, to scale) for rod-mark positions
+  const maxH = Math.max(1, ...sorted.map(c => c.markOnly ? MARK_H : c.rodLength + c.diameter));
   const pad = 56, barT = 30;
   const scale = (width - pad*2) / Math.max(1, hanger.barLength);
   const svgH = maxH*scale + barT*scale + pad*2 + 36;
@@ -529,7 +558,7 @@ function HangerDiagram({ hanger, mode="preview", activeClamp=-1, activeStage=nul
   const CY = "#00E5D1", CYM = "#2a9d96", AMB = "#FFB020", DIM = "#39414a", LAB = "#8a939c";
   const colorFor = (i, which) => {
     if (mode === "preview") return "#9aa0a8";
-    if (i === activeClamp && ((which==="rod"&&activeStage==="rod")||(which==="clamp"&&activeStage==="clamp")||(which==="base"&&(activeStage==="mark"||activeStage==="cut")))) return CY;
+    if (i === activeClamp && ((which==="rod"&&activeStage==="rod")||(which==="clamp"&&activeStage==="clamp")||((which==="base"||which==="mark")&&(activeStage==="mark"||activeStage==="cut")))) return CY;
     if (compStatus) { const s = compStatus(i, which==="base"?"clamp":which); if (s==="skipped") return AMB; if (s==="done") return CYM; }
     return DIM;
   };
@@ -540,6 +569,20 @@ function HangerDiagram({ hanger, mode="preview", activeClamp=-1, activeStage=nul
         fill={mode==="preview"?"#4a5058":"#23282d"} stroke={mode==="preview"?"#6a7078":"#2c3238"} strokeWidth="1" />
       {sorted.map((c, i) => {
         const x = pad + c.position*scale;
+        if (c.markOnly) {
+          // rod-marker position: tick + ring above the bar, no rod, no clamp
+          const col = colorFor(i, "mark"), top = barY - MARK_H*scale, rr = Math.max(4, 12*scale);
+          return (
+            <g key={i}>
+              <rect x={x-8*scale} y={barY-6*scale} width={16*scale} height={6*scale} fill={col} opacity={0.85} />
+              <line x1={x} y1={barY} x2={x} y2={top+rr} stroke={col} strokeWidth={Math.max(1.5,3*scale)} strokeDasharray="4 3" />
+              <circle cx={x} cy={top} r={rr} fill="none" stroke={col} strokeWidth={Math.max(1.5,3*scale)} />
+              {mode==="preview" && <text x={x} y={top-rr-6} textAnchor="middle" fill={LAB} fontSize="10" fontFamily="ui-monospace,monospace">ROD MARK</text>}
+              <line x1={pad} y1={barY+barT*scale+10} x2={x} y2={barY+barT*scale+10} stroke={DIM} strokeWidth="1" />
+              <text x={x} y={barY+barT*scale+22} textAnchor="middle" fill={mode==="preview"?CYM:LAB} fontSize="11" fontFamily="ui-monospace,monospace" fontWeight={mode==="preview"?700:400}>{c.position}</text>
+            </g>
+          );
+        }
         const rodTopY = barY - c.rodLength*scale;
         const r = (c.diameter/2)*scale;
         const cyc = rodTopY - r;
@@ -571,7 +614,7 @@ function HangerDiagram({ hanger, mode="preview", activeClamp=-1, activeStage=nul
 // REORDER RECORD — aggregate skipped components across all hangers
 // ============================================================
 function buildRecord(hangers, statuses) {
-  let barLen = 0, rodCount = 0, rodLen = 0;
+  let barLen = 0, rodCount = 0, rodLen = 0, rodMarks = 0;
   const clampByDia = {};
   const perHanger = [];
   hangers.forEach((h, hi) => {
@@ -581,10 +624,11 @@ function buildRecord(hangers, statuses) {
       if (t.type === "CUT_BAR") { barLen += t.value; missing.push(`base bar ${t.value}mm`); }
       else if (t.type === "INSERT_ROD") { rodCount++; rodLen += t.value; missing.push(`rod ${t.value}mm (mark ${t.clampIndex+1})`); }
       else if (t.type === "ATTACH_CLAMP") { clampByDia[t.value] = (clampByDia[t.value]||0)+1; missing.push(`clamp \u00D8${t.value} (mark ${t.clampIndex+1})`); }
+      else if (t.type === "ROD_MARK") { rodMarks++; missing.push(`rod mark at ${t.value}mm (mark ${t.clampIndex+1})`); }
     });
     if (missing.length) perHanger.push({ id: h.id, missing });
   });
-  return { barLen, rodCount, rodLen, clampByDia, perHanger };
+  return { barLen, rodCount, rodLen, rodMarks, clampByDia, perHanger };
 }
 
 // ============================================================
@@ -1027,10 +1071,11 @@ function App() {
         </div>
         <div className="spec" style={{marginBottom:8, maxWidth:620}}>
           <div className="k">BAR LENGTH</div><div className="v">{cur.barLength} mm</div>
-          <div className="k">CLAMPS</div><div className="v">{cur.clamps.length}</div>
+          <div className="k">CLAMPS</div><div className="v">{cur.clamps.filter(c=>!c.markOnly).length}</div>
           <div className="k">MARKS (from left)</div><div className="v">{cur.clamps.map(c=>c.position).join(" \u00B7 ")}</div>
-          <div className="k">ROD LENGTHS</div><div className="v">{cur.clamps.map(c=>c.rodLength).join(" \u00B7 ")}</div>
-          <div className="k">CLAMP &#216;</div><div className="v">{cur.clamps.map(c=>c.diameter).join(" \u00B7 ")}</div>
+          {cur.clamps.some(c=>c.markOnly) && <><div className="k">ROD MARKS (pen only)</div><div className="v">{cur.clamps.filter(c=>c.markOnly).map(c=>c.position).join(" \u00B7 ")}</div></>}
+          <div className="k">ROD LENGTHS</div><div className="v">{cur.clamps.filter(c=>!c.markOnly).map(c=>c.rodLength).join(" \u00B7 ")}</div>
+          <div className="k">CLAMP &#216;</div><div className="v">{cur.clamps.filter(c=>!c.markOnly).map(c=>c.diameter).join(" \u00B7 ")}</div>
         </div>
         {st !== "pending" && <div className="badge" style={{display:"inline-block", marginBottom:14}}>{st === "complete" ? "ALREADY COMPLETE" : st === "partial" ? "PARTIAL — HAS SKIPPED ITEMS" : "IN PROGRESS"}</div>}
         <button className="btn-primary" style={{maxWidth:520}} onClick={startHanger}>
@@ -1108,7 +1153,8 @@ function App() {
       if (rec.barLen) L.push(`  base bar: ${rec.barLen} mm`);
       if (rec.rodCount) L.push(`  threaded rod: ${rec.rodCount} pcs / ${rec.rodLen} mm`);
       clampRows.forEach(d => L.push(`  clamp \u00D8${d}: ${rec.clampByDia[d]}`));
-      if (!rec.barLen && !rec.rodCount && !clampRows.length) L.push("  (nothing skipped)");
+      if (rec.rodMarks) L.push(`  rod marks (pen only): ${rec.rodMarks}`);
+      if (!rec.barLen && !rec.rodCount && !clampRows.length && !rec.rodMarks) L.push("  (nothing skipped)");
       L.push("", "BY HANGER");
       rec.perHanger.forEach(h => { L.push(`  ${h.id}:`); h.missing.forEach(m => L.push(`    - ${m}`)); });
       return L.join("\n");
@@ -1126,13 +1172,14 @@ function App() {
         </div>
 
         <div className="h2">REORDER TOTALS (SKIPPED COMPONENTS)</div>
-        {(rec.barLen || rec.rodCount || clampRows.length) ? (
+        {(rec.barLen || rec.rodCount || clampRows.length || rec.rodMarks) ? (
           <table className="reorder">
             <thead><tr><th>PART</th><th style={{textAlign:"right"}}>QTY</th></tr></thead>
             <tbody>
               {rec.barLen > 0 && <tr><td>Base bar</td><td className="num">{rec.barLen} mm</td></tr>}
               {rec.rodCount > 0 && <tr><td>Threaded rod</td><td className="num">{rec.rodCount} pcs · {rec.rodLen} mm</td></tr>}
               {clampRows.map(d => <tr key={d}><td>Clamp &#216;{d}</td><td className="num">{rec.clampByDia[d]}</td></tr>)}
+              {rec.rodMarks > 0 && <tr><td>Rod marks (pen only)</td><td className="num">{rec.rodMarks}</td></tr>}
             </tbody>
           </table>
         ) : <div className="empty">Nothing skipped — everything built.</div>}

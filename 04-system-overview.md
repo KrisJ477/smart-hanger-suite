@@ -7,7 +7,7 @@ A set of tools for fabricating bespoke smart-hangers (base bar + threaded rods +
 
 ### Shared core
 - CSV ingest (`parseCSV`): split rows quote-aware (`splitCSVLine` — quoted fields may hold commas), locate header by `IronLength`, map columns by name, read up to 20 clamp slots (`MAX_SLOTS`) as **D / X / ThreadLength** (D = clamp diameter, X = position, ThreadLength = rod cut length). `Y` (pipe centerline) is **not read** — it's sticker-only. Resolve ID (`Comments` → `Mark` → row N). **Refuses old exports lacking `SH_n_ThreadLength`.**
-- Cleanup (`cleanHanger`): purge filler (`D===1`), sort clamps by position.
+- Cleanup (`cleanHanger`): purge filler (`D===1`), sort clamps by position, flag slots with a blank `ThreadLength` as `markOnly` (rod-mark position: pen mark only, no rod, no clamp).
 - Hanger data model.
 - To-scale 2D diagram renderer (rod drawn to ThreadLength).
 

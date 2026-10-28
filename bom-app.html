@@ -76,23 +76,27 @@ function parseCSV(text) {
 
 // ---- CLEANUP (drop filler D===1, sort by position) ----
 function cleanHanger(h) {
-  const clamps = h.slots.filter((s) => s.diameter !== 1).sort((a, b) => a.position - b.position);
+  // markOnly: slot has a clamp position but no ThreadLength (blank in the export) —
+  // a rod-marker position: the operator pen-marks it, no rod is cut, no clamp fitted.
+  const clamps = h.slots.filter((s) => s.diameter !== 1).sort((a, b) => a.position - b.position)
+    .map((s) => ({ ...s, markOnly: Number.isNaN(s.rodLength) }));
   return { ...h, clamps };
 }
 
 // ---- aggregate one file's cleaned hangers into fixed totals ----
 function computeTotals(cleaned) {
-  let barLen = 0, rodLen = 0, clampCount = 0;
+  let barLen = 0, rodLen = 0, clampCount = 0, rodMarks = 0;
   const clampByDia = {};
   cleaned.forEach((h) => {
     barLen += h.barLength;
     h.clamps.forEach((c) => {
+      if (c.markOnly) { rodMarks += 1; return; } // pen mark only — no rod, no clamp
       rodLen += c.rodLength;
       clampByDia[c.diameter] = (clampByDia[c.diameter] || 0) + 1;
       clampCount += 1;
     });
   });
-  return { barCount: cleaned.length, barLen, rodLen, clampByDia, clampCount };
+  return { barCount: cleaned.length, barLen, rodLen, clampByDia, clampCount, rodMarks };
 }
 function customComputed(rows, totals) {
   return rows.map((row) => {
@@ -202,11 +206,12 @@ function Pane({ pane, derived, onUpdate, onRemove }) {
     { label: "Base bar (total mm)", qty: totals.barLen },
     { label: "Threaded rod (total mm)", qty: totals.rodLen },
     ...clampRowsFromDia(totals.clampByDia),
+    ...(totals.rodMarks ? [{ label: "Rod marks (pen only, no rod/clamp)", qty: totals.rodMarks }] : []),
   ];
   const cc = empty ? [] : customComputed(pane.customRows, totals);
   const customBomRows = cc.filter((r) => (r.label || "").trim() && r.total).map((r) => ({ label: r.label.trim(), qty: r.total }));
 
-  const summary = empty ? "no file loaded" : `${totals.barCount} hangers · ${totals.clampCount} clamps`;
+  const summary = empty ? "no file loaded" : `${totals.barCount} hangers · ${totals.clampCount} clamps${totals.rodMarks ? ` · ${totals.rodMarks} rod marks` : ""}`;
 
   const addRow = () => onUpdate({ customRows: [...pane.customRows, { qty: "", label: "", basis: "clamp" }] });
   const updateRow = (i, patch) => onUpdate({ customRows: pane.customRows.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
@@ -355,9 +360,14 @@ function Pane({ pane, derived, onUpdate, onRemove }) {
                           <tr key={h.id}>
                             <td style={{ ...cell, color: C.text }}>{h.id}</td>
                             <td style={{ ...cell, color: C.dim }}>{h.barLength}</td>
-                            <td style={{ ...cell, color: C.dim }}>{h.clamps.length}</td>
+                            <td style={{ ...cell, color: C.dim }}>{h.clamps.filter((c) => !c.markOnly).length}</td>
                             <td style={{ ...cell, color: C.dim, whiteSpace: "normal" }}>
-                              {h.clamps.map((c, i) => (
+                              {h.clamps.map((c, i) => c.markOnly ? (
+                                <span key={i} style={{ marginRight: "14px", display: "inline-block" }}>
+                                  <span style={{ color: C.dim }}>ROD MARK</span>
+                                  <span style={{ color: C.faint }}>@{c.position}</span>
+                                </span>
+                              ) : (
                                 <span key={i} style={{ marginRight: "14px", display: "inline-block" }}>
                                   <span style={{ color: C.accent }}>Ø{c.diameter}</span>
                                   <span style={{ color: C.faint }}>@{c.position}</span>
@@ -447,13 +457,14 @@ function App() {
 
   // ---- grand total across all panes ----
   const grand = useMemo(() => {
-    let barLen = 0, rodLen = 0;
+    let barLen = 0, rodLen = 0, rodMarks = 0;
     const dia = {}, custom = {};
     panes.forEach((p, idx) => {
       const d = derived[idx];
       if (d.empty || d.error) return;
       barLen += d.totals.barLen;
       rodLen += d.totals.rodLen;
+      rodMarks += d.totals.rodMarks || 0;
       Object.entries(d.totals.clampByDia).forEach(([k, n]) => { dia[k] = (dia[k] || 0) + n; });
       customComputed(p.customRows, d.totals).filter((r) => (r.label || "").trim() && r.total).forEach((r) => {
         const key = r.label.trim().toLowerCase();
@@ -465,6 +476,7 @@ function App() {
       { label: "Base bar (total mm)", qty: barLen },
       { label: "Threaded rod (total mm)", qty: rodLen },
       ...clampRowsFromDia(dia),
+      ...(rodMarks ? [{ label: "Rod marks (pen only, no rod/clamp)", qty: rodMarks }] : []),
     ];
     return { fixedRows, customRows: Object.values(custom) };
   }, [panes, derived]);
