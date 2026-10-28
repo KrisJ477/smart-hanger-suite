@@ -188,13 +188,32 @@ const STORE_KEY = "smh-operator-v1";
 // ============================================================
 const MAX_SLOTS = 20;
 
+// CSV cells: quote-aware split/join (RFC 4180 style). A field wrapped in double
+// quotes may contain commas and doubled "" quotes — Revit Mark/Comments text does.
+// Newlines inside a quoted field are NOT handled (rows are split on line breaks first).
+function splitCSVLine(line) {
+  const out = []; let cur = "", q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) { if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ",") { out.push(cur); cur = ""; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+function joinCSVLine(cells) {
+  return cells.map((c) => (/[",\r\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c)).join(",");
+}
+
 function parseCSV(text) {
   if (!text || !text.trim()) return { hangers: [], error: null, empty: true };
   const bom = text.charCodeAt(0) === 0xFEFF;
   const eol = text.indexOf("\r\n") !== -1 ? "\r\n" : "\n";
   const clean = bom ? text.slice(1) : text;
   const rawLines = clean.split(/\r?\n/).filter((l) => l.length > 0); // verbatim rows (no CR)
-  const rows = rawLines.map((l) => l.split(","));
+  const rows = rawLines.map(splitCSVLine);
   const headerIdx = rows.findIndex((r) => r.includes("IronLength"));
   if (headerIdx === -1) return { hangers: [], error: "No header row found (missing 'IronLength' column)." };
 
@@ -219,11 +238,10 @@ function parseCSV(text) {
       if (Number.isNaN(d)) continue;               // blank/absent slot — no clamp
       slots.push({ slot: n, diameter: d, position: x, rodLength: tl });
     }
-    // NOTE (Mark vs Comments): In the cc41 export the HA-1..HA-18 labels live in
-    // the "Comments" column and "Mark" is EMPTY. We read Mark first, then fall back
-    // to Comments, then row N. The BOM app keys on Mark only, so it shows blank IDs
-    // on this file — patch it the same way if/when we revisit it.
-    const id = ((r[cMark] || "").trim()) || ((r[cComments] || "").trim()) || `row ${i - headerIdx}`;
+    // ID: Comments first (that's where the HA-n.n labels live), then Mark, then row N.
+    // Mark may carry a free-text description (quoted, with commas) — never use it
+    // as the ID while Comments is filled. Same order in the BOM app — keep in sync.
+    const id = ((r[cComments] || "").trim()) || ((r[cMark] || "").trim()) || `row ${i - headerIdx}`;
     hangers.push({ id, type, barLength: parseFloat(r[cBar]) || 0, slots });
     rawRows.push(rawLines[i]);
   }
@@ -354,23 +372,24 @@ function packBars(hangers, wasteBars, stockLen) {
 // so stickers printed from the export aren't littered with filler values.
 // Read path + Revit are untouched; blank or "1" both purge on re-import.
 function blankFiller(rowText, colIdx) {
-  const cells = rowText.split(",");
+  const cells = splitCSVLine(rowText);
+  let changed = false;
   for (let n = 1; n <= MAX_SLOTS; n++) {
     const di = colIdx[`SH_${n}_D`];
     if (di == null || parseFloat(cells[di]) !== 1) continue;
     [`SH_${n}_D`, `SH_${n}_X`, `SH_${n}_Y`, `SH_${n}_ThreadLength`].forEach(name => {
       const ci = colIdx[name];
-      if (ci != null && ci >= 0 && ci < cells.length) cells[ci] = "";
+      if (ci != null && ci >= 0 && ci < cells.length) { cells[ci] = ""; changed = true; }
     });
   }
-  return cells.join(",");
+  return changed ? joinCSVLine(cells) : rowText; // untouched rows stay byte-for-byte verbatim
 }
 
 // Build the export CSV: title + header preserved, original rows reordered
 // bar-by-bar (filler slots blanked), a leftover row (length in IronLength, rest blank) after each bar.
 function buildExportCSV(plan, raw) {
   const colIdx = {};
-  raw.header.split(",").forEach((name, i) => { colIdx[name.trim()] = i; });
+  splitCSVLine(raw.header).forEach((name, i) => { colIdx[name.trim()] = i; });
   const filt = (i) => blankFiller(raw.rows[i], colIdx);
 
   const lines = [...raw.title, raw.header];

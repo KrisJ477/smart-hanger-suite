@@ -28,7 +28,7 @@ Before a session ends, **fully update the docs in `docs/` and this file** to ref
 
 A set of tools for fabricating bespoke smart-hangers — assemblies of a base bar, threaded rods, and pipe clamps — from CSV files exported by Revit. Two apps share a common data layer:
 
-1. **BOM app** (`apps/bom-app.html`) — reads the CSV, produces a bill of materials for purchasing/planning. **Built and current** — standalone HTML, multi-pane, aggregates totals, custom line items, File System Access load/reload; reads `ThreadLength` and resolves IDs via `Mark → Comments → row N`.
+1. **BOM app** (`apps/bom-app.html`) — reads the CSV, produces a bill of materials for purchasing/planning. **Built and current** — standalone HTML, multi-pane, aggregates totals, custom line items, File System Access load/reload; reads `ThreadLength` and resolves IDs via `Comments → Mark → row N`.
 2. **Operator widget** (`apps/operator-widget.html`) — reads the CSV, plans bar-cutting order, writes the reordered CSV to two folders, then walks an operator through assembly one atomic task at a time. **Built** as a standalone HTML production app. Optionally drives a LinuxCNC saw later (a Thomas 310 conversion — not yet started).
 
 Apps are deliberately separate. They share the CSV ingest/cleanup/sort logic and the to-scale hanger diagram, nothing else.
@@ -63,7 +63,7 @@ Apps are deliberately separate. They share the CSV ingest/cleanup/sort logic and
 
 ## Common entry points
 
-- **"Let's work on the BOM app"** → read `04` + `01`, then open `apps/bom-app.html`. Same data layer as the widget (reads `ThreadLength`, ID via `Mark → Comments → row N`, refuses old exports). Its `parseCSV`/`cleanHanger` are a separate copy from the widget's — sync by hand if you touch either.
+- **"Let's work on the BOM app"** → read `04` + `01`, then open `apps/bom-app.html`. Same data layer as the widget (reads `ThreadLength`, ID via `Comments → Mark → row N`, refuses old exports). Its `parseCSV`/`cleanHanger` are a separate copy from the widget's — sync by hand if you touch either.
 - **"Let's iterate on the widget"** → read `04`, `02`, `05`, and open `apps/operator-widget.html`. Then ask what aspect he wants to work on.
 - **"Saw integration / LinuxCNC stuff"** → read `04` + `03`. Verify any technical claims about LinuxCNC by searching — don't rely on memory.
 
@@ -85,7 +85,7 @@ Apps are deliberately separate. They share the CSV ingest/cleanup/sort logic and
 - **File ▾ menu** (title bar + planning header) replaces the old RELOAD button: Reload this file · Switch CSV (if >1 in folder) · Change folder… — each discards progress, guarded by a two-step inline confirm **only when there's progress to lose**. With no live folder handle (restored session / no-FS-Access) it collapses to a single **Open folder…** so the label is never misleading.
 - Input: large NEXT (right column), small BACK, two amber skip buttons. **Keyboard: Space / ArrowRight = forward, ArrowLeft = back**, single-fire (auto-repeat ignored — a held/stuck key can't advance). Maps cleanly to a 2–3-button control box / foot pedal.
 - Persistence via `localStorage` (session resume); both folder handles are session-scoped (re-pick next day).
-- No commas inside CSV fields (parser splits on raw commas, no quote handling).
+- CSV rows are split quote-aware: a `"quoted"` field may hold commas (Revit `Mark`/`Comments` descriptions do). No line breaks inside fields. Hanger ID = `Comments` → `Mark` → row N.
 - LinuxCNC integration (future) via halui + Python bridge daemon. Not QtVCP, not linuxcncrsh. Axis stays visible. Manual fallback always preserved.
 
 If Kris wants to revisit any of these, he'll say so. Don't volunteer alternatives unprompted.

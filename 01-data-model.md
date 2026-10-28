@@ -16,7 +16,7 @@ CSV exported from Revit. One row per smart-hanger. Current sample in the project
 
 The file carries a UTF-8 BOM and CRLF line endings (both preserved on export — see `05`).
 
-> **No commas inside fields.** The parser splits on raw commas (no quote handling) — agreed constraint. Revit `Family and Type` etc. must stay comma-free.
+> **Quoted fields.** Rows are split quote-aware (RFC 4180): a field wrapped in `"…"` may contain commas and doubled `""` quotes — Revit writes `Mark`/`Comments` descriptions that way. Line breaks inside a field are **not** supported (rows are split on line breaks first). Bare, unquoted commas inside a field still break the row.
 
 ### Columns (46 in the current export)
 - `Family and Type` — hanger family/type string. A blank value here marks a non-data row (skip it).
@@ -25,7 +25,7 @@ The file carries a UTF-8 BOM and CRLF line endings (both preserved on export —
   - **`D` = clamp diameter (mm)**
   - **`X` = position on bar (absolute, mm from the left end)**
   - **`Y` = pipe CENTERLINE height (mm)** — *not consumed by either app*; it is the design elevation, printed on stickers for manual control only.
-- `Comments`, `Mark`, `MC Object Variable 4`, `MC Object Variable 3`.
+- `Comments`, `Mark`, `MC Object Variable 4`, `MC Object Variable 3`. **Hanger ID = `Comments` → `Mark` → `row N`** (first non-blank). The HA-n.n labels live in `Comments`; `Mark` may hold a free-text description and is only used as the ID when `Comments` is empty.
 - One **`SH_n_ThreadLength`** column per slot (mm) — **the family-computed rod CUT length** for each slot. This is what the operator cuts and what the widget shows on INSERT ROD.
 
 Columns are mapped **by name**, so reordering and renamed `MC Object Variable *` columns are tolerated. (Older exports used `MC Object Variable 2`; irrelevant — never read.)
