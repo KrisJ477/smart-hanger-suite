@@ -1011,7 +1011,7 @@ function App() {
           <div className="k">CLAMPS</div><div className="v">{cur.clamps.length}</div>
           <div className="k">MARKS (from left)</div><div className="v">{cur.clamps.map(c=>c.position).join(" \u00B7 ")}</div>
           <div className="k">ROD LENGTHS</div><div className="v">{cur.clamps.map(c=>c.rodLength).join(" \u00B7 ")}</div>
-          <div className="k">CLAMP \u00D8</div><div className="v">{cur.clamps.map(c=>c.diameter).join(" \u00B7 ")}</div>
+          <div className="k">CLAMP &#216;</div><div className="v">{cur.clamps.map(c=>c.diameter).join(" \u00B7 ")}</div>
         </div>
         {st !== "pending" && <div className="badge" style={{display:"inline-block", marginBottom:14}}>{st === "complete" ? "ALREADY COMPLETE" : st === "partial" ? "PARTIAL — HAS SKIPPED ITEMS" : "IN PROGRESS"}</div>}
         <button className="btn-primary" style={{maxWidth:520}} onClick={startHanger}>
