@@ -6,7 +6,7 @@ Current implementation: **`operator-widget.html`** — standalone single-file ap
 Human-in-the-loop machine simulator and production UI. The operator works through one atomic instruction at a time, like a state machine would. Validates process logic before committing to full automation; also serves as the production UI itself, with optional saw integration on top.
 
 ## Data in
-Loads the **same CSV as the BOM app**. Parse → clean (purge `D===1`, sort by position) → one hanger per row. Rod length per clamp = **`SH_n_ThreadLength`** (family-computed cut length); `Y`/centerline is unused. Old exports without `ThreadLength` are **refused on load**. See `01-data-model.md`.
+Loads the **same CSV as the BOM app**. Parse → clean (purge `D===1`, sort by position) → one hanger per row. Rod length per clamp = **`SH_n_ThreadLength`** (family-computed cut length); `Y`/centerline is unused. Old exports without `ThreadLength` are **refused on load**, and so is any damaged file (column count, slot consistency, comma/quote in a cell — the three load guards in `01-data-model.md`). Nothing is ever loaded partially.
 
 ## App flow (screens)
 `load → (pickcsv) → planning → preview → production → hangerDone → … → complete`

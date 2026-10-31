@@ -86,7 +86,8 @@ Apps are deliberately separate. They share the CSV ingest/cleanup/sort logic and
 - **File ▾ menu** (title bar + planning header) replaces the old RELOAD button: Reload this file · Switch CSV (if >1 in folder) · Change folder… — each discards progress, guarded by a two-step inline confirm **only when there's progress to lose**. With no live folder handle (restored session / no-FS-Access) it collapses to a single **Open folder…** so the label is never misleading.
 - Input: large NEXT (right column), small BACK, two amber skip buttons. **Keyboard: Space / ArrowRight = forward, ArrowLeft = back**, single-fire (auto-repeat ignored — a held/stuck key can't advance). Maps cleanly to a 2–3-button control box / foot pedal.
 - Persistence via `localStorage` (session resume); both folder handles are session-scoped (re-pick next day).
-- CSV rows are split quote-aware: a `"quoted"` field may hold commas (Revit `Mark`/`Comments` descriptions do). No line breaks inside fields. Hanger ID = `Comments` → `Mark` → row N.
+- CSV rows are split quote-aware (`splitCSVLine`), but the widget then **refuses any cell that still holds a comma or quote** — exports must be comma-free (Revit now writes semicolons in text fields). No line breaks inside fields. Hanger ID = `Comments` → `Mark` → row N.
+- **Load guards (widget `parseCSV`, added after the 2026-10-28 Simhall file):** every data row is validated before any hanger is built — (1) exact column count, (2) slot consistency: a real clamp (`D` set, `D≠1`) must have numeric `X` and `ThreadLength`, (3) no comma/quote inside a cell. The first failure refuses the whole file with a `Row n (id): …` message on the load screen — never a partial load. The BOM app's `parseCSV` copy does **not** carry these guards yet.
 - LinuxCNC integration (future) via halui + Python bridge daemon. Not QtVCP, not linuxcncrsh. Axis stays visible. Manual fallback always preserved.
 
 If Kris wants to revisit any of these, he'll say so. Don't volunteer alternatives unprompted.
@@ -95,6 +96,9 @@ If Kris wants to revisit any of these, he'll say so. Don't volunteer alternative
 
 ## Open items
 
+- **Load guard 3 vs. older exports** — any export whose `Mark`/`Comments` notes hold (quoted) commas is refused by guard 3, including `Smart_Hangers_2026-10-28_09-08.csv` (99 hangers; loads fine without guard 3). Kris to decide: keep guard 3 and re-export comma-free, or drop it.
+- **Load guard 2 vs. ROD MARK** — guard 2 refuses a real clamp (`D≠1`) with blank `ThreadLength`, which is exactly the rod-mark convention in `docs/01-data-model.md`. Rod marks can't be loaded while guard 2 stands; needs another encoding or a guard exception.
+- **BOM app lacks the load guards** — sync by hand when Kris gives the go-ahead.
 - **Clamp-slot ordering in CSV export** — read-side `cleanHanger` sorts by X, but the write-side export does not. Diagnosed; fix awaits Kris's go-ahead.
 - **Revit-side export script** (pyRevit) is not in this repo; only the consuming side is documented in `docs/01-data-model.md`.
 - **BOM app header rigidity** — `"Family and Type"` is hard-coded; noted, currently a non-issue.

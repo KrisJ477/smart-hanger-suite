@@ -224,6 +224,41 @@ function parseCSV(text) {
     return { hangers: [], error: "Old export — no rod ThreadLength columns (SH_n_ThreadLength). Re-export from Revit before loading." };
   }
 
+  // ---- Input guards (after the 2026-10-28 Simhall file) ----
+  // A damaged file is refused outright on the first failing data row; nothing
+  // is ever loaded partially. A data row = a row whose "Family and Type" is set.
+  //   1. exact column count (same as the header)
+  //   2. slot consistency: a real clamp (D set, D != 1) must have X and ThreadLength
+  //      -- this is the one that catches a comma-shifted, width-trimmed export
+  //   3. no comma / quote inside any cell (exports are comma-free)
+  const ncol = header.length;
+  const slotCols = [];
+  for (let n = 1; n <= MAX_SLOTS; n++) {
+    const cd = col(`SH_${n}_D`), cx = col(`SH_${n}_X`), ct = col(`SH_${n}_ThreadLength`);
+    if (cd !== -1 && cx !== -1 && ct !== -1) slotCols.push({ n, cd, cx, ct });
+  }
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!(r[cType] || "").trim()) continue;
+    const rowN = i - headerIdx;
+    const idTxt = ((r[cComments] || "").trim()) || ((r[cMark] || "").trim());
+    if (r.length !== ncol) {
+      return { hangers: [], error: `Row ${rowN} (${idTxt || "no id"}): ${r.length} columns, header has ${ncol}. File is damaged, re-export from Revit.` };
+    }
+    const id = idTxt || `row ${rowN}`;
+    for (const { n, cd, cx, ct } of slotCols) {
+      const d = parseFloat(r[cd]);
+      if (Number.isNaN(d) || d === 1) continue;
+      const missing = Number.isNaN(parseFloat(r[cx])) ? "X" : Number.isNaN(parseFloat(r[ct])) ? "ThreadLength" : null;
+      if (missing) {
+        return { hangers: [], error: `Row ${rowN} (${id}): slot ${n} has D=${d} but no ${missing}. File is damaged, re-export from Revit.` };
+      }
+    }
+    if (r.some((c) => c.includes(",") || c.includes('"'))) {
+      return { hangers: [], error: `Row ${rowN} (${id}): text contains a comma or quote. Exports must be comma-free, re-export from Revit.` };
+    }
+  }
+
   const hangers = [];
   const rawRows = []; // verbatim source row text, aligned 1:1 with hangers
   for (let i = headerIdx + 1; i < rows.length; i++) {

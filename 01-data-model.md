@@ -16,7 +16,7 @@ CSV exported from Revit. One row per smart-hanger. Current sample in the project
 
 The file carries a UTF-8 BOM and CRLF line endings (both preserved on export — see `05`).
 
-> **Quoted fields.** Rows are split quote-aware (RFC 4180): a field wrapped in `"…"` may contain commas and doubled `""` quotes — Revit writes `Mark`/`Comments` descriptions that way. Line breaks inside a field are **not** supported (rows are split on line breaks first). Bare, unquoted commas inside a field still break the row.
+> **Quoted fields.** Rows are split quote-aware (RFC 4180, `splitCSVLine`), so a `"…"` field is kept whole — but the widget then **refuses the file if any cell still contains a comma or a quote** (load guard 3 below). Exports must be comma-free: the Revit export now writes semicolons in text fields. Line breaks inside a field are **not** supported (rows are split on line breaks first).
 
 ### Columns (46 in the current export)
 - `Family and Type` — hanger family/type string. A blank value here marks a non-data row (skip it).
@@ -28,6 +28,7 @@ The file carries a UTF-8 BOM and CRLF line endings (both preserved on export —
 - `Comments`, `Mark`, `MC Object Variable 4`, `MC Object Variable 3`. **Hanger ID = `Comments` → `Mark` → `row N`** (first non-blank). The HA-n.n labels live in `Comments`; `Mark` may hold a free-text description and is only used as the ID when `Comments` is empty.
 - One **`SH_n_ThreadLength`** column per slot (mm) — **the family-computed rod CUT length** for each slot. This is what the operator cuts and what the widget shows on INSERT ROD.
   - **Blank `ThreadLength` on a slot that has a `D`/`X` = a rod-mark position** (`markOnly` after cleanup): the operator pen-marks it with the rod-marker, **no rod is cut and no clamp is fitted**. Used for rail joints / bolt crossings. The widget emits a single ROD MARK task for it; the BOM counts it under "Rod marks", not under rod mm or clamps.
+  - ⚠ **Conflict with load guard 2** (below): a slot with `D≠1` and blank `ThreadLength` is exactly what the 2026-10-28 damaged file looked like, so the widget now refuses it. Rod marks are unloadable until this is resolved (open item in `CLAUDE.md`).
 
 Columns are mapped **by name**, so reordering and renamed `MC Object Variable *` columns are tolerated. (Older exports used `MC Object Variable 2`; irrelevant — never read.)
 
@@ -35,6 +36,18 @@ Columns are mapped **by name**, so reordering and renamed `MC Object Variable *`
 `Y` is the pipe centerline; the true rod is shorter by the clamp's centerline-to-rod offset, which carries a non-geometric constant (≈10.5mm on top of the radius) that varies by clamp. The Revit family computes this and exports it as `SH_n_ThreadLength`, so the apps **read ThreadLength directly and never derive from Y**. Spot check: `ThreadLength ≈ Y − (D/2 + ~10.5)`.
 
 > **Old exports (no `SH_n_ThreadLength`) are refused.** The widget hard-errors on load — the cut length isn't derivable, so there is no silent fallback. Re-export from Revit.
+
+### Load guards (widget only)
+
+Added after the 2026-10-28 Simhall file: an earlier build split rows on every comma, the `Mark` notes held commas, so `SH_n_ThreadLength` cells shifted right and the writer trimmed each row back to header width. The current build loaded that file, saw real clamps with blank `ThreadLength`, treated them as rod marks and **silently dropped 55 clamps on 31 hangers** — every shown value was correct, only missing. A column count alone would not have caught it (every row still had 86 cells).
+
+`parseCSV` now validates **every data row** (a row whose `Family and Type` is non-empty) after the header is found and before any hanger is built. The first failure returns `{ hangers: [], error }` and nothing is loaded — never a partial file. `id` = `Comments`, else `Mark`, else `row n`.
+
+1. **Column count** — exactly as many cells as the header after `splitCSVLine`. `Row n (id or "no id"): k columns, header has h. File is damaged, re-export from Revit.`
+2. **Slot consistency** — for every slot with all three columns: if `SH_n_D` parses as a number other than 1, `SH_n_X` and `SH_n_ThreadLength` must both parse as numbers. `Row n (id): slot n has D=d but no X|ThreadLength. File is damaged, re-export from Revit.` This is the check that catches the 2026-10-28 file (first hit HA-2.1 slot 4).
+3. **No commas / quotes inside cells** — after splitting, any cell containing `,` or `"` refuses the file. `Row n (id): text contains a comma or quote. Exports must be comma-free, re-export from Revit.`
+
+Checks run per row in that order, so a row that fails 2 reports 2 even if its notes also hold commas. The error shows in the load screen's existing error slot. The BOM app's `parseCSV` copy does not carry these guards.
 
 ### Hanger ID — quirk
 ID resolution is **`Mark` → `Comments` → `row N`**.
