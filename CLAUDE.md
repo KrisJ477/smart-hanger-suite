@@ -99,6 +99,7 @@ If Kris wants to revisit any of these, he'll say so. Don't volunteer alternative
 - **Load guard 3 vs. older exports** — any export whose `Mark`/`Comments` notes hold (quoted) commas is refused by guard 3, including `Smart_Hangers_2026-10-28_09-08.csv` (99 hangers; loads fine without guard 3). Kris to decide: keep guard 3 and re-export comma-free, or drop it.
 - **Load guard 2 vs. ROD MARK** — guard 2 refuses a real clamp (`D≠1`) with blank `ThreadLength`, which is exactly the rod-mark convention in `docs/01-data-model.md`. Rod marks can't be loaded while guard 2 stands; needs another encoding or a guard exception.
 - **BOM app lacks the load guards** — sync by hand when Kris gives the go-ahead.
+- **`Comments`/`Mark` are swapped in the Revit export** — the HA-n.n label lands in `Comments` and the bar notes in `Mark` (38 of 99 rows in the 28 Oct files carry notes there). Kris wants to fix the structure export-side later, after checking the Brother printer's label template. Until then both apps keep reading ID as `Comments → Mark → row N`.
 - **Clamp-slot ordering in CSV export** — read-side `cleanHanger` sorts by X, but the write-side export does not. Diagnosed; fix awaits Kris's go-ahead.
 - **Revit-side export script** (pyRevit) is not in this repo; only the consuming side is documented in `docs/01-data-model.md`.
 - **BOM app header rigidity** — `"Family and Type"` is hard-coded; noted, currently a non-issue.
