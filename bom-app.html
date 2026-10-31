@@ -68,7 +68,15 @@ function parseCSV(text) {
       if (Number.isNaN(d)) continue;
       slots.push({ slot: n, diameter: d, position: x, rodLength: tl });
     }
-    const id = ((r[cComments] || "").trim()) || ((r[cMark] || "").trim()) || `row ${i - headerIdx}`; // Comments → Mark → row N (same as widget)
+    // ID = Mark (the HA-n.n label), else row N; Comments holds the bar notes (same as widget).
+    // Old exports put the ID in Comments and the notes in Mark — refuse those outright.
+    const markTxt = (r[cMark] || "").trim(), commentsTxt = (r[cComments] || "").trim();
+    if ((!markTxt && commentsTxt) || /\s/.test(markTxt)) {
+      const short = (s) => s.length > 30 ? s.slice(0, 30) + "\u2026" : s;
+      const found = markTxt ? `Mark holds text ("${short(markTxt)}")` : `Comments holds "${short(commentsTxt)}" and Mark is empty`;
+      return { hangers: [], error: `Row ${i - headerIdx}: ${found}. The hanger ID must be in Mark \u2014 old column layout, re-export from Revit with the updated exporter.` };
+    }
+    const id = markTxt || `row ${i - headerIdx}`;
     hangers.push({ id, type, barLength: parseFloat(r[cBar]) || 0, slots });
   }
   return { hangers, error: null };

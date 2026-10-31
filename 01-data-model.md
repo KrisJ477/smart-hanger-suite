@@ -25,7 +25,7 @@ The file carries a UTF-8 BOM and CRLF line endings (both preserved on export —
   - **`D` = clamp diameter (mm)**
   - **`X` = position on bar (absolute, mm from the left end)**
   - **`Y` = pipe CENTERLINE height (mm)** — *not consumed by either app*; it is the design elevation, printed on stickers for manual control only.
-- `Comments`, `Mark`, `MC Object Variable 4`, `MC Object Variable 3`. **Hanger ID = `Comments` → `Mark` → `row N`** (first non-blank). The HA-n.n labels live in `Comments`; `Mark` may hold a free-text description and is only used as the ID when `Comments` is empty.
+- `Comments`, `Mark`, `MC Object Variable 4`, `MC Object Variable 3`. **Hanger ID = `Mark` → `row N`**. `Mark` holds the HA-n.n label (never whitespace); `Comments` holds the free-text bar notes (semicolons, no commas). Exports with the old layout (ID in `Comments`, notes in `Mark`) are refused by load guard 4.
 - One **`SH_n_ThreadLength`** column per slot (mm) — **the family-computed rod CUT length** for each slot. This is what the operator cuts and what the widget shows on INSERT ROD.
   - **Blank `ThreadLength` on a slot that has a `D`/`X` = a rod-mark position** (`markOnly` after cleanup): the operator pen-marks it with the rod-marker, **no rod is cut and no clamp is fitted**. Used for rail joints / bolt crossings. The widget emits a single ROD MARK task for it; the BOM counts it under "Rod marks", not under rod mm or clamps.
   - ⚠ **Conflict with load guard 2** (below): a slot with `D≠1` and blank `ThreadLength` is exactly what the 2026-10-28 damaged file looked like, so the widget now refuses it. Rod marks are unloadable until this is resolved (open item in `CLAUDE.md`).
@@ -47,11 +47,12 @@ Added after the 2026-10-28 Simhall file: an earlier build split rows on every co
 2. **Slot consistency** — for every slot with all three columns: if `SH_n_D` parses as a number other than 1, `SH_n_X` and `SH_n_ThreadLength` must both parse as numbers. `Row n (id): slot n has D=d but no X|ThreadLength. File is damaged, re-export from Revit.` This is the check that catches the 2026-10-28 file (first hit HA-2.1 slot 4).
 3. **No commas / quotes inside cells** — after splitting, any cell containing `,` or `"` refuses the file. `Row n (id): text contains a comma or quote. Exports must be comma-free, re-export from Revit.`
 
-Checks run per row in that order, so a row that fails 2 reports 2 even if its notes also hold commas. The error shows in the load screen's existing error slot. The BOM app's `parseCSV` copy does not carry these guards.
+4. **Column layout** — `Mark` must hold the ID: a row with an empty `Mark` but a filled `Comments`, or whitespace inside `Mark`, is the old layout (ID in `Comments`, notes in `Mark`). `Row n: Comments holds "HA-1.1" and Mark is empty. The hanger ID must be in Mark — old column layout, re-export from Revit with the updated exporter.` (or `Mark holds text ("…")`). Both 28 Oct files trip this on row 1.
 
-### Hanger ID — quirk
-ID resolution is **`Mark` → `Comments` → `row N`**.
-In these exports the `HA…` labels live in **`Comments`**; **`Mark` is empty**.
+Checks run per row in the order 1, 4, 2, 3, so an old-layout file reports the layout, and a damaged new-layout row reports the slot even if its notes also hold commas. The error shows in the load screen's existing error slot. The BOM app's `parseCSV` copy carries guard 4 only.
+
+### Hanger ID
+ID resolution is **`Mark` → `row N`** in both apps; `Comments` is never an ID. The 28 Oct 2026 exports had it the other way round (label in `Comments`, notes in `Mark`); the KJTools exporter was changed on 31 Oct 2026 to export both columns as-is, and both apps now refuse the old layout (guard 4). The sticker CSV the widget writes swaps them back, because the Brother label template reads the ID from `Comments` (see `05`).
 > Both apps resolve the ID this way, read `ThreadLength` for rod length, and refuse exports without it. (The BOM app was patched to match the widget; its `parseCSV` is still a separate copy — sync by hand.)
 
 ## Preprocessing (per row)
@@ -70,4 +71,4 @@ The operator widget marks **absolute distances from the left end** (the clamp `X
 - The clamp centre therefore sits ≈10.5mm below the true centerline (`Y`), which is *not* drawn — invisible at minimap scale, accepted.
 
 ## Export CSV (operator widget)
-On Begin Production the widget writes a reordered CSV (two copies, two folders). Format and rules are in `05-planning-and-export.md`. In short: BOM + title + header preserved, original rows reordered into cut order with **filler slots blanked**, plus a `Waste`-labelled leftover row (offcut length in `IronLength`, rest blank) after each bar.
+On Begin Production the widget writes one sticker CSV into the loaded folder. Format and rules are in `05-planning-and-export.md`. In short: BOM + title + header preserved, original rows reordered into cut order with **filler slots blanked** and **`Comments`/`Mark` swapped** (the Brother label template reads the ID from `Comments`), plus a `Waste`-labelled leftover row (offcut length in `IronLength`, rest blank) after each bar.

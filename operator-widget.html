@@ -231,6 +231,8 @@ function parseCSV(text) {
   //   2. slot consistency: a real clamp (D set, D != 1) must have X and ThreadLength
   //      -- this is the one that catches a comma-shifted, width-trimmed export
   //   3. no comma / quote inside any cell (exports are comma-free)
+  //   4. column layout: the hanger ID lives in Mark (an ID never has whitespace);
+  //      old exports put it in Comments with the bar notes in Mark -- refused
   const ncol = header.length;
   const slotCols = [];
   for (let n = 1; n <= MAX_SLOTS; n++) {
@@ -241,11 +243,16 @@ function parseCSV(text) {
     const r = rows[i];
     if (!(r[cType] || "").trim()) continue;
     const rowN = i - headerIdx;
-    const idTxt = ((r[cComments] || "").trim()) || ((r[cMark] || "").trim());
+    const markTxt = (r[cMark] || "").trim(), commentsTxt = (r[cComments] || "").trim();
     if (r.length !== ncol) {
-      return { hangers: [], error: `Row ${rowN} (${idTxt || "no id"}): ${r.length} columns, header has ${ncol}. File is damaged, re-export from Revit.` };
+      return { hangers: [], error: `Row ${rowN} (${markTxt || commentsTxt || "no id"}): ${r.length} columns, header has ${ncol}. File is damaged, re-export from Revit.` };
     }
-    const id = idTxt || `row ${rowN}`;
+    if ((!markTxt && commentsTxt) || /\s/.test(markTxt)) {
+      const short = (s) => s.length > 30 ? s.slice(0, 30) + "\u2026" : s;
+      const found = markTxt ? `Mark holds text ("${short(markTxt)}")` : `Comments holds "${short(commentsTxt)}" and Mark is empty`;
+      return { hangers: [], error: `Row ${rowN}: ${found}. The hanger ID must be in Mark \u2014 old column layout, re-export from Revit with the updated exporter.` };
+    }
+    const id = markTxt || `row ${rowN}`;
     for (const { n, cd, cx, ct } of slotCols) {
       const d = parseFloat(r[cd]);
       if (Number.isNaN(d) || d === 1) continue;
@@ -273,10 +280,9 @@ function parseCSV(text) {
       if (Number.isNaN(d)) continue;               // blank/absent slot — no clamp
       slots.push({ slot: n, diameter: d, position: x, rodLength: tl });
     }
-    // ID: Comments first (that's where the HA-n.n labels live), then Mark, then row N.
-    // Mark may carry a free-text description (quoted, with commas) — never use it
-    // as the ID while Comments is filled. Same order in the BOM app — keep in sync.
-    const id = ((r[cComments] || "").trim()) || ((r[cMark] || "").trim()) || `row ${i - headerIdx}`;
+    // ID = Mark (the HA-n.n label), else row N. Comments holds the free-text bar
+    // notes. Guard 4 above refuses the old layout (ID in Comments). Same in the BOM app.
+    const id = ((r[cMark] || "").trim()) || `row ${i - headerIdx}`;
     hangers.push({ id, type, barLength: parseFloat(r[cBar]) || 0, slots });
     rawRows.push(rawLines[i]);
   }
@@ -430,12 +436,25 @@ function blankFiller(rowText, colIdx) {
   return changed ? joinCSVLine(cells) : rowText; // untouched rows stay byte-for-byte verbatim
 }
 
-// Build the export CSV: title + header preserved, original rows reordered
-// bar-by-bar (filler slots blanked), a leftover row (length in IronLength, rest blank) after each bar.
+// Sticker-file layout: the Brother label template reads the hanger ID from
+// Comments and the bar notes from Mark -- the opposite of the Revit export
+// (ID in Mark, notes in Comments). Swap the two cells on write only.
+function swapIdCols(rowText, colIdx) {
+  const ci = colIdx["Comments"], mi = colIdx["Mark"];
+  if (ci == null || mi == null) return rowText;
+  const cells = splitCSVLine(rowText);
+  if (ci >= cells.length || mi >= cells.length || cells[ci] === cells[mi]) return rowText;
+  const t = cells[ci]; cells[ci] = cells[mi]; cells[mi] = t;
+  return joinCSVLine(cells);
+}
+
+// Build the sticker CSV: title + header preserved, original rows reordered
+// bar-by-bar (filler slots blanked, ID/notes swapped into the sticker layout),
+// a leftover row (length in IronLength, Comments = Waste, rest blank) after each bar.
 function buildExportCSV(plan, raw) {
   const colIdx = {};
   splitCSVLine(raw.header).forEach((name, i) => { colIdx[name.trim()] = i; });
-  const filt = (i) => blankFiller(raw.rows[i], colIdx);
+  const filt = (i) => swapIdCols(blankFiller(raw.rows[i], colIdx), colIdx);
 
   const lines = [...raw.title, raw.header];
   plan.bins.forEach(b => {
@@ -452,16 +471,34 @@ function buildExportCSV(plan, raw) {
   return (raw.bom ? "\uFEFF" : "") + lines.join(raw.eol) + raw.eol;
 }
 
-function exportName(fileName) {
-  const base = (fileName || "hangers").replace(/\.csv$/i, "");
-  return `${base} - production.csv`;
-}
-
-// Timestamped copy name for the printer/Documents folder. Local time;
-// ":" is illegal in filenames, so HH-MM. e.g. Smart_Hangers_2026-06-06_15-27.csv
-function timestampName(d = new Date()) {
+// Sticker CSV name, written into the loaded folder. Local time; ":" is illegal
+// in filenames, so HH-MM. e.g. Smart_Hangers_2026-06-06_15-27_stickers.csv
+// The _stickers suffix keeps it apart from the Revit export (which uses the
+// same Smart_Hangers_<stamp> pattern) and out of the folder's CSV chooser.
+function stickerName(d = new Date()) {
   const p = (n) => String(n).padStart(2, "0");
-  return `Smart_Hangers_${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}.csv`;
+  return `Smart_Hangers_${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}_stickers.csv`;
+}
+// the app's own outputs (and legacy production copies) are never offered as input
+const isOwnOutput = (nm) => /_stickers\.csv$/i.test(nm) || / - production\.csv$/i.test(nm);
+
+// Remembered folder handle (IndexedDB). A stored handle survives a browser
+// restart; using it again needs queryPermission/requestPermission (one click).
+const IDB_NAME = "smh-operator-fsa", IDB_STORE = "handles";
+function idbOpen() {
+  return new Promise((res, rej) => {
+    const q = indexedDB.open(IDB_NAME, 1);
+    q.onupgradeneeded = () => q.result.createObjectStore(IDB_STORE);
+    q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
+  });
+}
+async function idbGet(key) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => { const q = db.transaction(IDB_STORE).objectStore(IDB_STORE).get(key); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+}
+async function idbSet(key, val) {
+  const db = await idbOpen();
+  return new Promise((res, rej) => { const tx = db.transaction(IDB_STORE, "readwrite"); tx.objectStore(IDB_STORE).put(val, key); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); });
 }
 async function writeToDir(dir, name, text) {
   const fh = await dir.getFileHandle(name, { create: true });
@@ -685,8 +722,8 @@ function App() {
   const [hangers, setHangers] = useState(saved ? saved.hangers : []);    // cleaned + .tasks
   const [statuses, setStatuses] = useState(saved ? saved.statuses : []); // per hanger: array of 'pending'|'done'|'skipped'
   const [fileName, setFileName] = useState(saved ? saved.fileName : "");
-  const [dirHandle, setDirHandle] = useState(null);     // FileSystemDirectoryHandle — not persistable, re-pick next day
-  const [printerHandle, setPrinterHandle] = useState(null); // printer/Documents output — session-scoped, own picker id
+  const [dirHandle, setDirHandle] = useState(null);     // live folder handle (permission granted this session)
+  const [storedDir, setStoredDir] = useState(null);     // remembered folder handle from IndexedDB — may need a permission click
   const [raw, setRaw] = useState(saved && saved.raw ? saved.raw : null); // verbatim CSV pieces for export
   const [csvChoices, setCsvChoices] = useState(null);   // [{name, handle}] when a folder has multiple CSVs
   const [exportMsg, setExportMsg] = useState(null);
@@ -715,6 +752,17 @@ function App() {
 
   const fsaDir = typeof window !== "undefined" && !!window.showDirectoryPicker;
 
+  // remembered folder: pull the handle from IndexedDB; if the browser still has
+  // the permission, connect silently, otherwise the load screen offers one-click reopen
+  useEffect(() => {
+    if (!fsaDir) return;
+    idbGet("dir").then(async (h) => {
+      if (!h) return;
+      setStoredDir(h);
+      try { if (await h.queryPermission({ mode: "readwrite" }) === "granted") setDirHandle(h); } catch (e) { /* ignore */ }
+    }).catch(() => { /* IndexedDB blocked — just pick each time */ });
+  }, []);
+
   function loadText(text, name, dir) {
     const { hangers: parsed, error, raw: rawParts } = parseCSV(text);
     if (error) { setError(error); return; }
@@ -727,54 +775,71 @@ function App() {
     setHIdx(0); setTIdx(0); setPlan(null); setScreen("planning");
   }
 
-  // pick a FOLDER (read-write); load the CSV inside it. Lets us write outputs back.
+  async function listCsvs(dir) {
+    const csvs = [];
+    for await (const [nm, h] of dir.entries()) {
+      if (h.kind === "file" && /\.csv$/i.test(nm) && !isOwnOutput(nm)) csvs.push({ name: nm, handle: h });
+    }
+    return csvs.sort((a,b)=>a.name.localeCompare(b.name));
+  }
+  // a folder we hold permission on: remember it, then load the CSV inside it
+  async function useFolder(dir) {
+    setStoredDir(dir); idbSet("dir", dir).catch(() => { /* not persistable here */ });
+    const csvs = await listCsvs(dir);
+    setFolderCsvN(csvs.length);
+    if (!csvs.length) { setDirHandle(dir); setError("No CSV files in that folder."); return; }
+    if (csvs.length === 1) { const f = await csvs[0].handle.getFile(); loadText(await f.text(), csvs[0].name, dir); }
+    else { setDirHandle(dir); setCsvChoices(csvs); setError(null); setScreen("pickcsv"); }
+  }
+  // the ONE folder: input CSV and sticker output live here. Picked with the
+  // folder picker (opens at the remembered folder), then remembered for good.
   async function openPicker() {
-    if (fsaDir) {
-      try {
-        const dir = await window.showDirectoryPicker({ id: "smh-dir", mode: "readwrite", startIn: "documents" });
-        const csvs = [];
-        for await (const [nm, h] of dir.entries()) {
-          if (h.kind === "file" && /\.csv$/i.test(nm) && !/ - production\.csv$/i.test(nm)) csvs.push({ name: nm, handle: h });
-        }
-        if (!csvs.length) { setDirHandle(dir); setFolderCsvN(0); setError("No CSV files in that folder."); return; }
-        setFolderCsvN(csvs.length);
-        if (csvs.length === 1) { const f = await csvs[0].handle.getFile(); loadText(await f.text(), csvs[0].name, dir); }
-        else { setDirHandle(dir); setCsvChoices(csvs.sort((a,b)=>a.name.localeCompare(b.name))); setError(null); setScreen("pickcsv"); }
-      } catch (e) { /* cancelled */ }
-    } else { fileInput.current && fileInput.current.click(); }
+    if (!fsaDir) { fileInput.current && fileInput.current.click(); return; }
+    let dir = null;
+    try { dir = await window.showDirectoryPicker({ id: "smh-dir", mode: "readwrite", startIn: storedDir || "documents" }); }
+    catch (e) {
+      if (e && e.name === "AbortError") return; // cancelled
+      try { dir = await window.showDirectoryPicker({ id: "smh-dir", mode: "readwrite", startIn: "documents" }); } catch (e2) { return; }
+    }
+    try { await useFolder(dir); } catch (e) { setError("Could not read that folder."); }
+  }
+  // re-permission the remembered folder (one click, no dialog). null if refused.
+  async function connectStored() {
+    if (!storedDir) return null;
+    try {
+      if (await storedDir.requestPermission({ mode: "readwrite" }) !== "granted") return null;
+      setDirHandle(storedDir); return storedDir;
+    } catch (e) { return null; }
+  }
+  async function reopenStored(loadCsv) {
+    const dir = await connectStored();
+    if (!dir) { openPicker(); return; }
+    setError(null);
+    if (loadCsv) { try { await useFolder(dir); } catch (e) { setError("Could not read that folder."); } }
+    else listCsvs(dir).then(c => setFolderCsvN(c.length)).catch(() => {});
   }
   async function chooseCsv(choice) {
     const f = await choice.handle.getFile();
     loadText(await f.text(), choice.name, dirHandle);
   }
-  // printer/sticker output folder — own picker id (independent memory from the
-  // source folder), opens at Documents the first time. Session-scoped handle.
-  async function pickPrinterDir() {
-    if (!fsaDir) return;
-    try {
-      const dir = await window.showDirectoryPicker({ id: "smh-printer", mode: "readwrite", startIn: "documents" });
-      setPrinterHandle(dir); setError(null);
-    } catch (e) { /* cancelled */ }
-  }
   // re-read the CURRENT csv from disk (File-menu guards the progress warning)
   async function doReload() {
-    if (dirHandle && fileName) {
-      try { const fh = await dirHandle.getFileHandle(fileName); const f = await fh.getFile(); loadText(await f.text(), fileName, dirHandle); return; }
+    const dir = dirHandle || await connectStored();
+    if (dir && fileName) {
+      try { const fh = await dir.getFileHandle(fileName); const f = await fh.getFile(); loadText(await f.text(), fileName, dir); return; }
       catch (e) { /* handle lost — fall through to re-pick */ }
     }
     openPicker();
   }
   // pick a different CSV in the SAME folder — re-enumerate and show the chooser
   async function switchCsv() {
-    if (!dirHandle) { openPicker(); return; }
+    const dir = dirHandle || await connectStored();
+    if (!dir) { openPicker(); return; }
     try {
-      const csvs = [];
-      for await (const [nm, h] of dirHandle.entries()) {
-        if (h.kind === "file" && /\.csv$/i.test(nm) && !/ - production\.csv$/i.test(nm)) csvs.push({ name: nm, handle: h });
-      }
+      const csvs = await listCsvs(dir);
       setFolderCsvN(csvs.length);
       if (!csvs.length) { setError("No CSV files in that folder."); return; }
-      setCsvChoices(csvs.sort((a,b)=>a.name.localeCompare(b.name))); setError(null); setScreen("pickcsv");
+      setCsvChoices(csvs); setError(null); setScreen("pickcsv");
     } catch (e) { openPicker(); }
   }
   function onInput(e) {
@@ -783,26 +848,18 @@ function App() {
     e.target.value = "";
   }
 
-  // write the reordered CSV twice: production copy to the SOURCE folder, and a
-  // timestamped copy to the PRINTER folder. Each falls back to a download.
+  // write the sticker CSV (timestamped) into the loaded folder; reconnects the
+  // remembered folder first if this is a restored session. Download fallback.
   async function exportPlanCSV() {
     if (!plan || !raw) return;
     const text = buildExportCSV(plan, raw);
-    const prodName = exportName(fileName);
-    const stampName = timestampName();
-    const msgs = [];
-
-    if (dirHandle) {
-      try { await writeToDir(dirHandle, prodName, text); msgs.push(prodName + " \u2192 source folder"); }
-      catch (e) { downloadText(prodName, text); msgs.push(prodName + " \u2192 Downloads (source write failed)"); }
-    } else { downloadText(prodName, text); msgs.push(prodName + " \u2192 Downloads"); }
-
-    if (printerHandle) {
-      try { await writeToDir(printerHandle, stampName, text); msgs.push(stampName + " \u2192 " + printerHandle.name); }
-      catch (e) { downloadText(stampName, text); msgs.push(stampName + " \u2192 Downloads (printer write failed)"); }
-    } else { downloadText(stampName, text); msgs.push(stampName + " \u2192 Downloads"); }
-
-    setExportMsg(msgs.join(" \u00B7 "));
+    const name = stickerName();
+    const dir = dirHandle || await connectStored();
+    if (dir) {
+      try { await writeToDir(dir, name, text); setExportMsg(name + " \u2192 " + dir.name); return; }
+      catch (e) { downloadText(name, text); setExportMsg(name + " \u2192 Downloads (folder write failed)"); return; }
+    }
+    downloadText(name, text); setExportMsg(name + " \u2192 Downloads");
   }
 
   const cur = hangers[hIdx];
@@ -841,7 +898,6 @@ function App() {
     setError(null);
   };
   const beginProduction = async () => {
-    if (fsaDir && !printerHandle) { setError("Pick the printer output location first."); return; }
     await exportPlanCSV();
     // waste bars the plan consumes are spoken for — deduct them from the
     // persisted on-hand inventory so the next run starts from what's left.
@@ -892,7 +948,7 @@ function App() {
       const fwd = e.key === " " || e.code === "Space" || e.key === "Spacebar" || e.key === "ArrowRight";
       if (fwd) {
         e.preventDefault(); // stop page scroll
-        if (screen === "load") openPicker();
+        if (screen === "load") (storedDir ? reopenStored(true) : openPicker());
         else if (screen === "planning") { if (plan) beginProduction(); else doPlan(); }
         else if (screen === "preview") startHanger();
         else if (screen === "production") next();
@@ -904,7 +960,7 @@ function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [screen, plan, tIdx, hIdx, tasks.length, hangers.length, wasteBars, stockLen, printerHandle, dirHandle, fileMenu]);
+  }, [screen, plan, tIdx, hIdx, tasks.length, hangers.length, wasteBars, stockLen, storedDir, dirHandle, fileMenu]);
 
   // File ▾ menu — available on planning + the framed screens. Destructive actions
   // are guarded only when there's build progress to lose.
@@ -924,10 +980,11 @@ function App() {
             {folderCsvN > 1 &&
               <button className={"fmitem" + (armed==="switch"?" armed":"")} onClick={() => fileAct("switch", switchCsv)}>{fmLabel("Switch CSV", "switch")} <span className="sub">in this folder</span></button>}
             <button className={"fmitem" + (armed==="folder"?" armed":"")} onClick={() => fileAct("folder", openPicker)}>{fmLabel("Change folder\u2026", "folder")}</button>
-          </> : (
-            // no live folder handle (restored session / no-FS-Access) — reload/switch can't work, so just offer to open
-            <button className={"fmitem" + (armed==="open"?" armed":"")} onClick={() => fileAct("open", openPicker)}>{fmLabel(fsaDir ? "Open folder\u2026" : "Open file\u2026", "open")}</button>
-          )}
+          </> : <>
+            {/* no live folder handle (restored session / no-FS-Access): reconnect the remembered folder (keeps progress), or open another */}
+            {storedDir && <button className="fmitem" onClick={() => { closeFileMenu(); reopenStored(false); }}>Reconnect folder <span className="sub">{storedDir.name}</span></button>}
+            <button className={"fmitem" + (armed==="open"?" armed":"")} onClick={() => fileAct("open", openPicker)}>{fmLabel(fsaDir ? (storedDir ? "Open another folder\u2026" : "Open folder\u2026") : "Open file\u2026", "open")}</button>
+          </>}
         </div>
       </>}
     </div>
@@ -944,10 +1001,14 @@ function App() {
         {error && <div className="err" style={{marginBottom:16}}>{error}</div>}
         <div className="panel center" style={{padding:"56px 24px", display:"flex", flexDirection:"column", alignItems:"center", gap:20}}>
           <div className="label">{fsaDir ? "OPEN THE PRODUCTION FOLDER TO BEGIN" : "LOAD A REVIT CSV EXPORT TO BEGIN"}</div>
-          <button className="btn-primary" style={{maxWidth:420}} onClick={openPicker}>{fsaDir ? "OPEN FOLDER" : "LOAD CSV"}</button>
+          {fsaDir && storedDir &&
+            <button className="btn-primary" style={{maxWidth:420}} onClick={() => reopenStored(true)}>REOPEN {storedDir.name.toUpperCase()}</button>}
+          <button className={fsaDir && storedDir ? "btn-skip" : "btn-primary"} style={{maxWidth:420}} onClick={openPicker}>
+            {fsaDir ? (storedDir ? "OPEN ANOTHER FOLDER\u2026" : "OPEN FOLDER") : "LOAD CSV"}
+          </button>
           <div className="detail">{fsaDir
-            ? "Pick the folder your CSV is in — the reordered plan gets written back there."
-            : "On iPad, pick the file directly; the plan will download to Downloads."}</div>
+            ? "Pick the folder your CSV is in — the sticker CSV gets written back there. The folder is remembered: next time it's one click."
+            : "On iPad, pick the file directly; the sticker CSV will download to Downloads."}</div>
         </div>
         <input ref={fileInput} type="file" accept=".csv,text/csv" onChange={onInput} style={{display:"none"}} />
       </div>
@@ -1042,22 +1103,12 @@ function App() {
               </div>
             ))}
           </div>
-          {fsaDir && (
-            printerHandle
-              ? <div className="okbar row between" style={{gap:10}}>
-                  <span>{"\u2713"} PRINTER OUTPUT: {printerHandle.name}</span>
-                  <button className="tag" onClick={pickPrinterDir}>CHANGE</button>
-                </div>
-              : <button className="btn-skip" style={{width:"100%", marginBottom:14}} onClick={pickPrinterDir}>
-                  PICK PRINTER OUTPUT LOCATION (DOCUMENTS)
-                </button>
-          )}
-          <button className="btn-primary" onClick={beginProduction}
-            disabled={fsaDir && !printerHandle}
-            style={fsaDir && !printerHandle ? {opacity:0.45} : undefined}>
+          <button className="btn-primary" onClick={beginProduction}>
             BEGIN PRODUCTION <Chevron dir="right" />
           </button>
-          {fsaDir && !printerHandle && <div className="label center" style={{marginTop:8}}>SET PRINTER OUTPUT FIRST</div>}
+          <div className="label center" style={{marginTop:8}}>
+            {"STICKER CSV \u2192 "}{dirHandle ? dirHandle.name : storedDir ? storedDir.name + " (RECONNECTS ON BEGIN)" : "DOWNLOADS"}
+          </div>
         </>}
         <input ref={fileInput} type="file" accept=".csv,text/csv" onChange={onInput} style={{display:"none"}} />
       </div>
